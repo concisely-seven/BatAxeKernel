@@ -38,8 +38,16 @@ else
   # This backport is close to Exynos 4.14.113 but three contexts differ
   # in Samsung's namespace/cmdline/task_mmu files. Apply the matching hunks,
   # then port those three sites explicitly below.
+  python3 - "$TMP_DIR/susfs-kernel.patch" "$TMP_DIR/susfs-kernel-no-avc.patch" <<'PY'
+import pathlib, re, sys
+source = pathlib.Path(sys.argv[1]).read_text()
+blocks = re.split(r'(?=^diff --git )', source, flags=re.M)
+filtered = [block for block in blocks
+            if not block.startswith("diff --git a/security/selinux/avc.c ")]
+pathlib.Path(sys.argv[2]).write_text("".join(filtered))
+PY
   set +e
-  patch --batch --forward -p1 -F3 -x security/selinux/avc.c -d "$ROOT" < "$TMP_DIR/susfs-kernel.patch"
+  patch --batch --forward -p1 -F3 -d "$ROOT" < "$TMP_DIR/susfs-kernel-no-avc.patch"
   PATCH_STATUS=$?
   set -e
   echo "[SUSFS] Generic backport patch status=$PATCH_STATUS; porting Samsung-specific contexts"
