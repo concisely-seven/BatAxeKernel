@@ -34,8 +34,9 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x scripts/prepare-ksu-variant.sh
-          bash scripts/prepare-ksu-variant.sh ksun legacy
+          bash scripts/prepare-ksu-variant.sh ksun b933b1f728116a456fbebf27b6a8772a640cdf23
           grep -q 'KernelSU-Next/KernelSU-Next.git' build/ksu-source-info.txt
+          grep -q 'commit=b933b1f728116a456fbebf27b6a8772a640cdf23' build/ksu-source-info.txt
           test -L drivers/kernelsu
           test "$(readlink drivers/kernelsu)" = "../ksu-src/ksun/kernel"
 
