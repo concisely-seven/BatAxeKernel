@@ -38,7 +38,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: BatAxeKernel-d1xks-RKSU-SUSFS-v1.5.12-Clang13
-          path: export/*.zip
+          path: build/export/*.zip
           if-no-files-found: error
           compression-level: 9
 
