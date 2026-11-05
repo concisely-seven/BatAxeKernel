@@ -157,6 +157,9 @@ PY
 fi
 
 # Apply the modern bridge against the pinned KernelSU-Next legacy layout.
+python3 -m py_compile "$ROOT/scripts/apply-ksun-susfs-modern.py"
+test -s "$ROOT/fs/susfs.c"
+test -s "$ROOT/include/linux/susfs_def.h"
 python3 "$ROOT/scripts/apply-ksun-susfs-modern.py" "$KSU_DIR" "$ROOT"
 
 grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"
