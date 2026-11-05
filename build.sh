@@ -83,9 +83,10 @@ submodule() {
     separator
     quotes "Fetch all Submodules Update"
 
-    git submodule init && git submodule update --remote
-    git submodule update -f -q --init --recursive > /dev/null
-    check "Submodules"
+    # Do not update every submodule with --remote: the old KernelSU
+    # submodule is RSNTK/RKSU, not KernelSU Next. KSU is prepared separately.
+    git submodule update -f -q --init --recursive toolchain build/AIK > /dev/null
+    check "Build tool submodules"
 }
 
 # Fungsi untuk mendeteksi dan setup environment build
@@ -426,6 +427,14 @@ setup_clang_environment() {
         READELF=llvm-readelf \
         OBJSIZE=llvm-size \
     "
+
+    # These are supplied by the paired Manager build. Keep upstream defaults
+    # when building locally with an official, upstream-signed Manager.
+    for var in KSU_VERSION_OVERRIDE KSU_NEXT_MANAGER_SIZE KSU_NEXT_MANAGER_HASH; do
+        if [[ -n "${!var:-}" ]]; then
+            ARGS+=" $var=${!var}"
+        fi
+    done
 }
 
 # =============================================================================
@@ -435,11 +444,911 @@ setup_clang_environment() {
 kernelsu() {
     separator
 
-    # Setup KernelSU Next
-    if ! test -d "drivers/kernelsu"; then
-        quotes "Update KernelSU Next as Submodule"
+    # KernelSU Next Legacy is not the RSNTK KernelSU submodule in .gitmodules.
+    # Prepare a pinned Legacy kernel source and its corresponding Dev manager.
+    if [[ ! -L "drivers/kernelsu" ]] || \
+       ! grep -q '^variant=ksun
+
+# =============================================================================
+# FUNGSI BUILD KERNEL
+# =============================================================================
+
+kernel() {
+    # Build Kernel Image
+    separator
+    noquotes "Fetch Kernel Info"
+    separator
+    noquotes "Device: $DEVICE ("$MODEL")"
+    noquotes "SOC: Exynos 982$SOC"
+    noquotes "Defconfig: $KERNEL_DEFCONFIG"
+    noquotes "Kernel Version: $KERNEL_VERSION"
+    noquotes "Build Date: `date +"%Y-%m-%d"`"
+
+    if [ -z "$KSU_NEXT" ]; then
+        noquotes "KernelSU Next with SuSFS: Not Include"
+    else
+        noquotes "KernelSU Next with SuSFS: Include (Using $KSU_NEXT)"
+    fi
+
+    # Update kernel configuration
+    update_kernel_config
+
+    DEFCONFIG="$KERNEL_DEFCONFIG bataxe.config $KSU_NEXT"
+
+    separator
+    noquotes "Building Kernel Using $KERNEL_DEFCONFIG"
+    quotes "Generating Configuration Files"
+    separator
+
+    make -j$(nproc --all) $ARGS $DEFCONFIG || abort
+
+    separator
+    quotes "Building Kernel"
+    separator
+
+    make -j$(nproc --all) $ARGS || abort
+
+    separator
+    quotes "Finished Kernel Build!"
+    separator
+
+    # Prepare output directory
+    rm -rf build/out/$MODEL
+    mkdir -p build/out/$MODEL
+}
+
+# Fungsi untuk update konfigurasi kernel
+update_kernel_config() {
+    sed -i "s/CONFIG_LOCALVERSION=\"\"/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-$KERNEL_VERSION-$DEVICE-$MODEL\"/" arch/arm64/configs/$KERNEL_DEFCONFIG
+    sed -i "s/CONFIG_LOCALVERSION_AUTO=y/CONFIG_LOCALVERSION_AUTO=n/" arch/arm64/configs/$KERNEL_DEFCONFIG
+}
+
+# =============================================================================
+# FUNGSI BUILD DTB/DTBO
+# =============================================================================
+
+dtb() {
+    # Build DTB Image
+    quotes "Building Device Tree Blob Image for Exynos 982$SOC"
+    separator
+
+    ./build/mkdtimg cfg_create build/out/$MODEL/dtb_exynos982$SOC.img build/dtconfigs/exynos982$SOC.cfg -d out/arch/arm64/boot/dts/exynos
+
+    # Build DTBO Image
+    separator
+    quotes "Building Device Tree Blob Image for $DEVICE ($MODEL)"
+    separator
+
+    ./build/mkdtimg cfg_create build/out/$MODEL/dtbo_$MODEL.img build/dtconfigs/$MODEL.cfg -d out/arch/arm64/boot/dts/samsung
+}
+
+# =============================================================================
+# FUNGSI BUILD RAMDISK
+# =============================================================================
+
+ramdisk() {
+    # Build Ramdisk
+    separator
+    quotes "Building Ramdisk"
+    separator
+
+    rm -rf build/AIK/s*
+    mkdir -p build/AIK/split_img
+    pushd build/AIK/split_img > /dev/null
+    
+    # Setup boot image components
+    setup_boot_image_components
+    
+    popd > /dev/null
+
+    # Create Boot Image
+    quotes "Calling Android Image Kitchen"
+    pushd build/AIK > /dev/null
+
+    # Create ramdisk directories
+    create_ramdisk_directories
+
+    ./mkimg
+    popd > /dev/null
+}
+
+# Fungsi untuk setup komponen boot image
+setup_boot_image_components() {
+    mv ../../../out/arch/arm64/boot/Image boot.img-kernel
+    echo -e "0x10000000" > boot.img-base
+    echo -e $BOARD > boot.img-board
+    echo -e "androidboot.selinux=permissive androidboot.selinux=permissive loop.max_part=7" > boot.img-cmdline
+    echo -e "sha1" > boot.img-hashtype
+    echo -e "1" > boot.img-header_version
+    echo -e "AOSP" > boot.img-imgtype
+    echo -e "0x00008000" > boot.img-kernel_offset
+    echo -e "45285376" > boot.img-origsize
+    echo -e "2099-12" > boot.img-os_patch_level
+    echo -e "12.0.0" > boot.img-os_version
+    echo -e "2048" > boot.img-pagesize
+    echo -e "0x01000000" > boot.img-ramdisk_offset
+    echo -e "gzip" > boot.img-ramdiskcomp
+    echo -e "0xf0000000" > boot.img-second_offset
+    echo -e "0x00000100" > boot.img-tags_offset
+}
+
+# Fungsi untuk membuat direktori ramdisk
+create_ramdisk_directories() {
+    mkdir -p ramdisk/debug_ramdisk
+    mkdir -p ramdisk/dev
+    mkdir -p ramdisk/mnt
+    mkdir -p ramdisk/proc
+    mkdir -p ramdisk/sys
+}
+
+# =============================================================================
+# FUNGSI BUILD FLASHABLE ZIP
+# =============================================================================
+
+build_zip() {
+    # Build Zip
+    separator
+    quotes "Building Zip"
+    if [[ "$LOCAL" == "y" ]] || [[ "$RELEASE" == "y" ]]; then
         separator
-        git submodule init && git submodule update --remote
+    fi
+
+    pushd build > /dev/null
+    
+    # Prepare zip structure
+    prepare_zip_structure
+    
+    # Copy files to zip directory
+    copy_files_to_zip
+    
+    # Create module zip
+    create_module_zip
+    
+    popd > /dev/null
+    
+    # Update updater script dengan informasi build
+    update_updater_script
+    
+    # Create final zip
+    create_final_zip
+}
+
+# Fungsi untuk mempersiapkan struktur zip
+prepare_zip_structure() {
+    rm -rf out/$MODEL/zip
+    mkdir -p export
+    mkdir -p out/$MODEL/zip/module/common/
+    mkdir -p out/$MODEL/zip/module/META-INF/com/google/android
+    mkdir -p out/$MODEL/zip/META-INF/com/google/android
+    mv AIK/image-new.img out/$MODEL/boot-patched.img
+}
+
+# Fungsi untuk menyalin file ke direktori zip
+copy_files_to_zip() {
+    cp out/$MODEL/boot-patched.img out/$MODEL/zip/boot.img
+    cp out/$MODEL/dtb_exynos982$SOC.img out/$MODEL/zip/dtb.img
+    cp out/$MODEL/dtbo_$MODEL.img out/$MODEL/zip/dtbo.img
+    cp update-binary out/$MODEL/zip/META-INF/com/google/android/
+    mv updater-script out/$MODEL/zip/META-INF/com/google/android/
+
+    mv module.prop out/$MODEL/zip/module/
+    mv system.prop out/$MODEL/zip/module/common/
+    cp module-binary out/$MODEL/zip/module/META-INF/com/google/android/update-binary
+    echo -e "#MAGISK" > out/$MODEL/zip/module/META-INF/com/google/android/updater-script
+}
+
+# Fungsi untuk membuat module zip
+create_module_zip() {
+    cd out/$MODEL/zip/module
+    zip -r ../module.zip .
+    rm -rf out/$MODEL/zip/module
+}
+
+# Fungsi untuk update updater script dengan informasi build
+update_updater_script() {
+    sed -i "s/ui_print(\" Kernel Version: \");/ui_print(\" Kernel Version: $KERNEL_VERSION\");/" build/out/$MODEL/zip/META-INF/com/google/android/updater-script
+    sed -i "s/ui_print(\" Kernel Device: \");/ui_print(\" Kernel Device: $DEVICE ($MODEL)\");/" build/out/$MODEL/zip/META-INF/com/google/android/updater-script
+    sed -i "s/ui_print(\" Kernel Toolchain: \");/ui_print(\" Kernel Toolchain: $CLANG_INFO\");/" build/out/$MODEL/zip/META-INF/com/google/android/updater-script
+}
+
+# Fungsi untuk membuat final zip
+create_final_zip() {
+    if [[ "$LOCAL" == "y" ]] || [[ "$RELEASE" == "y" ]]; then
+        sed -i "s/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-$KERNEL_VERSION-"$DEVICE"-$MODEL\"/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-$KERNEL_VERSION-"$DATE"-"$DEVICE"-$MODEL-$KERNELCLANG\"/" arch/arm64/configs/$KERNEL_DEFCONFIG
+        NAME=$(grep -o 'CONFIG_LOCALVERSION="[^"]*"' arch/arm64/configs/$KERNEL_DEFCONFIG | cut -d '"' -f 2)
+        NAME=${NAME:1}.zip
+        pushd build/out/$MODEL/zip > /dev/null
+        zip -r ../"$NAME" .
+        popd > /dev/null
+        pushd build/out > /dev/null
+        rm -rf $MODEL/zip
+        mv $MODEL/"$NAME" ../export/"$NAME"
+        popd > /dev/null
+    fi
+}
+
+# =============================================================================
+# FUNGSI PARSING ARGUMEN
+# =============================================================================
+
+usage() {
+    cat << EOF
+Usage: $(basename "$0") [options]
+Options:
+    -m, --model [value]    Specify the Model Code of the Phone (default: d2s)
+                           Available models: beyond0lte, beyond1lte, beyond2lte, beyondx, d1, d1xks, d2s, d2x
+    -k, --ksu [y/N]        Include KernelSU Next with SuSFS (default: y)
+    -v, --ver [value]      Kernel version (default: Unofficial)
+    -r, --rel [y/N]        Release mode: y for Release, n for CI (default: n)
+    -c, --clean [y/N]      Reset all changes to latest commit (default: n)
+                           WARNING: All uncommitted changes will be lost!
+    -l, --llvm [value]     Clang version (12-21) or Neutron Clang version (default: 21)
+                           Examples: 18 for Clang 18, 10032024 for Neutron Clang
+    -h, --help             Show this help message
+
+Examples:
+    ./build.sh -m d2s -r y              # Build for d2s model in Release mode
+    ./build.sh -m beyond2lte -r n       # Build for beyond2lte in CI mode
+    ./build.sh -m d1xks -k n -l 18      # Build for d1xks without KSU, using Clang 18
+    ./build.sh -m d2s -c y              # Clean build for d2s
+EOF
+}
+
+# Fungsi untuk parsing argumen command line
+parse_arguments() {
+    USE_NEUTRON=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --model|-m)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    MODEL="$2"
+                    shift 2
+                else
+                    echo "Error: --model requires a value"
+                    usage
+                    exit 1
+                fi
+                ;;
+            --ksu|-k)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    KSU="$2"
+                    shift 2
+                else
+                    echo "Error: --ksu requires a value (y/N)"
+                    usage
+                    exit 1
+                fi
+                ;;
+            --ver|-v)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    KERNEL_VERSION="$2"
+                    shift 2
+                else
+                    echo "Error: --ver requires a value"
+                    usage
+                    exit 1
+                fi
+                ;;
+            --rel|-r)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    RELEASE="$2"
+                    shift 2
+                else
+                    echo "Error: --rel requires a value (y/N)"
+                    usage
+                    exit 1
+                fi
+                ;;
+            --help|-h)
+                usage
+                exit 0
+                ;;
+            --clean|-c)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    CLEAN="$2"
+                    shift 2
+                else
+                    echo "Error: --clean requires a value (y/N)"
+                    usage
+                    exit 1
+                fi
+                ;;
+            --llvm|-l)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    LLVM="$2"
+                    shift 2
+                else
+                    LLVM=21
+                    shift
+                fi
+                
+                # Check if LLVM version is between 12-21
+                if [[ "$LLVM" -ge 12 ]] && [[ "$LLVM" -le 21 ]]; then
+                    USE_NEUTRON=false
+                    echo "-- Using Clang $LLVM"
+                else
+                    USE_NEUTRON=true
+                    NEUTRON="${LLVM:-10032024}"
+                    echo "-- Using Neutron Clang ($NEUTRON)"
+                fi
+                ;;
+            *)
+                echo "Unknown option: $1"
+                usage
+                exit 1
+                ;;
+        esac
+    done
+}
+
+# Fungsi untuk setup model dan SOC
+setup_model() {
+    if [ -z "$MODEL" ]; then
+        MODEL=d2s
+        echo "-- Using default model: $MODEL"
+    fi
+
+    KERNEL_DEFCONFIG=bataxe-"$MODEL"_defconfig
+    case $MODEL in
+    beyond0lte)
+        SOC=0
+        BOARD=SRPRI28A014KU
+        ;;
+    beyond1lte)
+        SOC=0
+        BOARD=SRPRI28B014KU
+        ;;
+    beyond2lte)
+        SOC=0
+        BOARD=SRPRI17C014KU
+        ;;
+    beyondx)
+        SOC=0
+        BOARD=SRPSC04B011KU
+        ;;
+    d1)
+        SOC=5
+        BOARD=SRPSD26B007KU
+        ;;
+    d1xks)
+        SOC=5
+        BOARD=SRPSD26B008KU
+        ;;
+    d2s)
+        SOC=5
+        BOARD=SRPSC14B007KU
+        ;;
+    d2x)
+        SOC=5
+        BOARD=SRPSC14C007KU
+        ;;
+    *)
+        echo "Error: Unknown model: $MODEL"
+        echo "Available models: beyond0lte, beyond1lte, beyond2lte, beyondx, d1, d1xks, d2s, d2x"
+        usage
+        exit 1
+        ;;
+    esac
+}
+
+# =============================================================================
+# FUNGSI MAIN
+# =============================================================================
+
+main() {
+    # Setup logging
+    rm -rf ./build.log
+    
+    (
+        START=`date +%s`
+
+        separator
+        quotes "Preparing Build Environment"
+
+        # Parse arguments dan setup environment
+        parse_arguments "$@"
+        setup_model
+        detect_env
+        toolchain
+        
+        # Change to script directory
+        pushd $(dirname "$0") > /dev/null
+
+        # Setup submodules jika running di local
+        if [[ "$LOCAL" == "y" ]]; then
+            submodule
+        fi
+
+        # Setup KernelSU jika diaktifkan
+        if [[ "$KSU" == "y" ]]; then
+            KSU_NEXT=ksu.config
+            kernelsu
+        fi
+
+        # Build process
+        kernel
+        dtb
+        ramdisk
+        build_zip
+
+        # Cleanup jika running di local
+        if [[ "$LOCAL" == "y" ]]; then
+            clean
+            separator
+        fi
+
+        # Calculate and display build time
+        END=`date +%s`
+        let "ELAPSED=$END-$START"
+        quotes "Total Compile Time was $(($ELAPSED / 60)) Minutes and $(($ELAPSED % 60)) Seconds"
+        separator
+        
+    ) 2>&1 | tee -a ./build.log
+}
+
+# =============================================================================
+# EXECUTE MAIN FUNCTION
+# =============================================================================
+
+main "$@"
+ build/ksu-source-info.txt 2>/dev/null; then
+        quotes "Prepare KernelSU Next Legacy"
+        bash scripts/prepare-ksu-variant.sh ksun "${KSU_REF:-b933b1f728116a456fbebf27b6a8772a640cdf23}" "${KSU_MANAGER_REF:-b2c1ad00b755afe0db74d889b67a137f56e71fcc}"
+    fi
+
+    if [[ ! -f drivers/kernelsu/Kconfig || ! -f drivers/kernelsu/Makefile ]]; then
+        quotes "KernelSU Next driver link is invalid"
+        abort
+    fi
+    if ! grep -q '^config KSU_KPROBES_HOOK
+
+# =============================================================================
+# FUNGSI BUILD KERNEL
+# =============================================================================
+
+kernel() {
+    # Build Kernel Image
+    separator
+    noquotes "Fetch Kernel Info"
+    separator
+    noquotes "Device: $DEVICE ("$MODEL")"
+    noquotes "SOC: Exynos 982$SOC"
+    noquotes "Defconfig: $KERNEL_DEFCONFIG"
+    noquotes "Kernel Version: $KERNEL_VERSION"
+    noquotes "Build Date: `date +"%Y-%m-%d"`"
+
+    if [ -z "$KSU_NEXT" ]; then
+        noquotes "KernelSU Next with SuSFS: Not Include"
+    else
+        noquotes "KernelSU Next with SuSFS: Include (Using $KSU_NEXT)"
+    fi
+
+    # Update kernel configuration
+    update_kernel_config
+
+    DEFCONFIG="$KERNEL_DEFCONFIG bataxe.config $KSU_NEXT"
+
+    separator
+    noquotes "Building Kernel Using $KERNEL_DEFCONFIG"
+    quotes "Generating Configuration Files"
+    separator
+
+    make -j$(nproc --all) $ARGS $DEFCONFIG || abort
+
+    separator
+    quotes "Building Kernel"
+    separator
+
+    make -j$(nproc --all) $ARGS || abort
+
+    separator
+    quotes "Finished Kernel Build!"
+    separator
+
+    # Prepare output directory
+    rm -rf build/out/$MODEL
+    mkdir -p build/out/$MODEL
+}
+
+# Fungsi untuk update konfigurasi kernel
+update_kernel_config() {
+    sed -i "s/CONFIG_LOCALVERSION=\"\"/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-$KERNEL_VERSION-$DEVICE-$MODEL\"/" arch/arm64/configs/$KERNEL_DEFCONFIG
+    sed -i "s/CONFIG_LOCALVERSION_AUTO=y/CONFIG_LOCALVERSION_AUTO=n/" arch/arm64/configs/$KERNEL_DEFCONFIG
+}
+
+# =============================================================================
+# FUNGSI BUILD DTB/DTBO
+# =============================================================================
+
+dtb() {
+    # Build DTB Image
+    quotes "Building Device Tree Blob Image for Exynos 982$SOC"
+    separator
+
+    ./build/mkdtimg cfg_create build/out/$MODEL/dtb_exynos982$SOC.img build/dtconfigs/exynos982$SOC.cfg -d out/arch/arm64/boot/dts/exynos
+
+    # Build DTBO Image
+    separator
+    quotes "Building Device Tree Blob Image for $DEVICE ($MODEL)"
+    separator
+
+    ./build/mkdtimg cfg_create build/out/$MODEL/dtbo_$MODEL.img build/dtconfigs/$MODEL.cfg -d out/arch/arm64/boot/dts/samsung
+}
+
+# =============================================================================
+# FUNGSI BUILD RAMDISK
+# =============================================================================
+
+ramdisk() {
+    # Build Ramdisk
+    separator
+    quotes "Building Ramdisk"
+    separator
+
+    rm -rf build/AIK/s*
+    mkdir -p build/AIK/split_img
+    pushd build/AIK/split_img > /dev/null
+    
+    # Setup boot image components
+    setup_boot_image_components
+    
+    popd > /dev/null
+
+    # Create Boot Image
+    quotes "Calling Android Image Kitchen"
+    pushd build/AIK > /dev/null
+
+    # Create ramdisk directories
+    create_ramdisk_directories
+
+    ./mkimg
+    popd > /dev/null
+}
+
+# Fungsi untuk setup komponen boot image
+setup_boot_image_components() {
+    mv ../../../out/arch/arm64/boot/Image boot.img-kernel
+    echo -e "0x10000000" > boot.img-base
+    echo -e $BOARD > boot.img-board
+    echo -e "androidboot.selinux=permissive androidboot.selinux=permissive loop.max_part=7" > boot.img-cmdline
+    echo -e "sha1" > boot.img-hashtype
+    echo -e "1" > boot.img-header_version
+    echo -e "AOSP" > boot.img-imgtype
+    echo -e "0x00008000" > boot.img-kernel_offset
+    echo -e "45285376" > boot.img-origsize
+    echo -e "2099-12" > boot.img-os_patch_level
+    echo -e "12.0.0" > boot.img-os_version
+    echo -e "2048" > boot.img-pagesize
+    echo -e "0x01000000" > boot.img-ramdisk_offset
+    echo -e "gzip" > boot.img-ramdiskcomp
+    echo -e "0xf0000000" > boot.img-second_offset
+    echo -e "0x00000100" > boot.img-tags_offset
+}
+
+# Fungsi untuk membuat direktori ramdisk
+create_ramdisk_directories() {
+    mkdir -p ramdisk/debug_ramdisk
+    mkdir -p ramdisk/dev
+    mkdir -p ramdisk/mnt
+    mkdir -p ramdisk/proc
+    mkdir -p ramdisk/sys
+}
+
+# =============================================================================
+# FUNGSI BUILD FLASHABLE ZIP
+# =============================================================================
+
+build_zip() {
+    # Build Zip
+    separator
+    quotes "Building Zip"
+    if [[ "$LOCAL" == "y" ]] || [[ "$RELEASE" == "y" ]]; then
+        separator
+    fi
+
+    pushd build > /dev/null
+    
+    # Prepare zip structure
+    prepare_zip_structure
+    
+    # Copy files to zip directory
+    copy_files_to_zip
+    
+    # Create module zip
+    create_module_zip
+    
+    popd > /dev/null
+    
+    # Update updater script dengan informasi build
+    update_updater_script
+    
+    # Create final zip
+    create_final_zip
+}
+
+# Fungsi untuk mempersiapkan struktur zip
+prepare_zip_structure() {
+    rm -rf out/$MODEL/zip
+    mkdir -p export
+    mkdir -p out/$MODEL/zip/module/common/
+    mkdir -p out/$MODEL/zip/module/META-INF/com/google/android
+    mkdir -p out/$MODEL/zip/META-INF/com/google/android
+    mv AIK/image-new.img out/$MODEL/boot-patched.img
+}
+
+# Fungsi untuk menyalin file ke direktori zip
+copy_files_to_zip() {
+    cp out/$MODEL/boot-patched.img out/$MODEL/zip/boot.img
+    cp out/$MODEL/dtb_exynos982$SOC.img out/$MODEL/zip/dtb.img
+    cp out/$MODEL/dtbo_$MODEL.img out/$MODEL/zip/dtbo.img
+    cp update-binary out/$MODEL/zip/META-INF/com/google/android/
+    mv updater-script out/$MODEL/zip/META-INF/com/google/android/
+
+    mv module.prop out/$MODEL/zip/module/
+    mv system.prop out/$MODEL/zip/module/common/
+    cp module-binary out/$MODEL/zip/module/META-INF/com/google/android/update-binary
+    echo -e "#MAGISK" > out/$MODEL/zip/module/META-INF/com/google/android/updater-script
+}
+
+# Fungsi untuk membuat module zip
+create_module_zip() {
+    cd out/$MODEL/zip/module
+    zip -r ../module.zip .
+    rm -rf out/$MODEL/zip/module
+}
+
+# Fungsi untuk update updater script dengan informasi build
+update_updater_script() {
+    sed -i "s/ui_print(\" Kernel Version: \");/ui_print(\" Kernel Version: $KERNEL_VERSION\");/" build/out/$MODEL/zip/META-INF/com/google/android/updater-script
+    sed -i "s/ui_print(\" Kernel Device: \");/ui_print(\" Kernel Device: $DEVICE ($MODEL)\");/" build/out/$MODEL/zip/META-INF/com/google/android/updater-script
+    sed -i "s/ui_print(\" Kernel Toolchain: \");/ui_print(\" Kernel Toolchain: $CLANG_INFO\");/" build/out/$MODEL/zip/META-INF/com/google/android/updater-script
+}
+
+# Fungsi untuk membuat final zip
+create_final_zip() {
+    if [[ "$LOCAL" == "y" ]] || [[ "$RELEASE" == "y" ]]; then
+        sed -i "s/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-$KERNEL_VERSION-"$DEVICE"-$MODEL\"/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-$KERNEL_VERSION-"$DATE"-"$DEVICE"-$MODEL-$KERNELCLANG\"/" arch/arm64/configs/$KERNEL_DEFCONFIG
+        NAME=$(grep -o 'CONFIG_LOCALVERSION="[^"]*"' arch/arm64/configs/$KERNEL_DEFCONFIG | cut -d '"' -f 2)
+        NAME=${NAME:1}.zip
+        pushd build/out/$MODEL/zip > /dev/null
+        zip -r ../"$NAME" .
+        popd > /dev/null
+        pushd build/out > /dev/null
+        rm -rf $MODEL/zip
+        mv $MODEL/"$NAME" ../export/"$NAME"
+        popd > /dev/null
+    fi
+}
+
+# =============================================================================
+# FUNGSI PARSING ARGUMEN
+# =============================================================================
+
+usage() {
+    cat << EOF
+Usage: $(basename "$0") [options]
+Options:
+    -m, --model [value]    Specify the Model Code of the Phone (default: d2s)
+                           Available models: beyond0lte, beyond1lte, beyond2lte, beyondx, d1, d1xks, d2s, d2x
+    -k, --ksu [y/N]        Include KernelSU Next with SuSFS (default: y)
+    -v, --ver [value]      Kernel version (default: Unofficial)
+    -r, --rel [y/N]        Release mode: y for Release, n for CI (default: n)
+    -c, --clean [y/N]      Reset all changes to latest commit (default: n)
+                           WARNING: All uncommitted changes will be lost!
+    -l, --llvm [value]     Clang version (12-21) or Neutron Clang version (default: 21)
+                           Examples: 18 for Clang 18, 10032024 for Neutron Clang
+    -h, --help             Show this help message
+
+Examples:
+    ./build.sh -m d2s -r y              # Build for d2s model in Release mode
+    ./build.sh -m beyond2lte -r n       # Build for beyond2lte in CI mode
+    ./build.sh -m d1xks -k n -l 18      # Build for d1xks without KSU, using Clang 18
+    ./build.sh -m d2s -c y              # Clean build for d2s
+EOF
+}
+
+# Fungsi untuk parsing argumen command line
+parse_arguments() {
+    USE_NEUTRON=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --model|-m)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    MODEL="$2"
+                    shift 2
+                else
+                    echo "Error: --model requires a value"
+                    usage
+                    exit 1
+                fi
+                ;;
+            --ksu|-k)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    KSU="$2"
+                    shift 2
+                else
+                    echo "Error: --ksu requires a value (y/N)"
+                    usage
+                    exit 1
+                fi
+                ;;
+            --ver|-v)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    KERNEL_VERSION="$2"
+                    shift 2
+                else
+                    echo "Error: --ver requires a value"
+                    usage
+                    exit 1
+                fi
+                ;;
+            --rel|-r)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    RELEASE="$2"
+                    shift 2
+                else
+                    echo "Error: --rel requires a value (y/N)"
+                    usage
+                    exit 1
+                fi
+                ;;
+            --help|-h)
+                usage
+                exit 0
+                ;;
+            --clean|-c)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    CLEAN="$2"
+                    shift 2
+                else
+                    echo "Error: --clean requires a value (y/N)"
+                    usage
+                    exit 1
+                fi
+                ;;
+            --llvm|-l)
+                if [[ -n "$2" && "$2" != -* ]]; then
+                    LLVM="$2"
+                    shift 2
+                else
+                    LLVM=21
+                    shift
+                fi
+                
+                # Check if LLVM version is between 12-21
+                if [[ "$LLVM" -ge 12 ]] && [[ "$LLVM" -le 21 ]]; then
+                    USE_NEUTRON=false
+                    echo "-- Using Clang $LLVM"
+                else
+                    USE_NEUTRON=true
+                    NEUTRON="${LLVM:-10032024}"
+                    echo "-- Using Neutron Clang ($NEUTRON)"
+                fi
+                ;;
+            *)
+                echo "Unknown option: $1"
+                usage
+                exit 1
+                ;;
+        esac
+    done
+}
+
+# Fungsi untuk setup model dan SOC
+setup_model() {
+    if [ -z "$MODEL" ]; then
+        MODEL=d2s
+        echo "-- Using default model: $MODEL"
+    fi
+
+    KERNEL_DEFCONFIG=bataxe-"$MODEL"_defconfig
+    case $MODEL in
+    beyond0lte)
+        SOC=0
+        BOARD=SRPRI28A014KU
+        ;;
+    beyond1lte)
+        SOC=0
+        BOARD=SRPRI28B014KU
+        ;;
+    beyond2lte)
+        SOC=0
+        BOARD=SRPRI17C014KU
+        ;;
+    beyondx)
+        SOC=0
+        BOARD=SRPSC04B011KU
+        ;;
+    d1)
+        SOC=5
+        BOARD=SRPSD26B007KU
+        ;;
+    d1xks)
+        SOC=5
+        BOARD=SRPSD26B008KU
+        ;;
+    d2s)
+        SOC=5
+        BOARD=SRPSC14B007KU
+        ;;
+    d2x)
+        SOC=5
+        BOARD=SRPSC14C007KU
+        ;;
+    *)
+        echo "Error: Unknown model: $MODEL"
+        echo "Available models: beyond0lte, beyond1lte, beyond2lte, beyondx, d1, d1xks, d2s, d2x"
+        usage
+        exit 1
+        ;;
+    esac
+}
+
+# =============================================================================
+# FUNGSI MAIN
+# =============================================================================
+
+main() {
+    # Setup logging
+    rm -rf ./build.log
+    
+    (
+        START=`date +%s`
+
+        separator
+        quotes "Preparing Build Environment"
+
+        # Parse arguments dan setup environment
+        parse_arguments "$@"
+        setup_model
+        detect_env
+        toolchain
+        
+        # Change to script directory
+        pushd $(dirname "$0") > /dev/null
+
+        # Setup submodules jika running di local
+        if [[ "$LOCAL" == "y" ]]; then
+            submodule
+        fi
+
+        # Setup KernelSU jika diaktifkan
+        if [[ "$KSU" == "y" ]]; then
+            KSU_NEXT=ksu.config
+            kernelsu
+        fi
+
+        # Build process
+        kernel
+        dtb
+        ramdisk
+        build_zip
+
+        # Cleanup jika running di local
+        if [[ "$LOCAL" == "y" ]]; then
+            clean
+            separator
+        fi
+
+        # Calculate and display build time
+        END=`date +%s`
+        let "ELAPSED=$END-$START"
+        quotes "Total Compile Time was $(($ELAPSED / 60)) Minutes and $(($ELAPSED % 60)) Seconds"
+        separator
+        
+    ) 2>&1 | tee -a ./build.log
+}
+
+# =============================================================================
+# EXECUTE MAIN FUNCTION
+# =============================================================================
+
+main "$@"
+ drivers/kernelsu/Kconfig; then
+        quotes "KernelSU Next Legacy source does not contain the expected Kprobes hook"
+        abort
     fi
 }
 
