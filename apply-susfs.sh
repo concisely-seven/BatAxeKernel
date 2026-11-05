@@ -201,10 +201,15 @@ p = root / "fs/notify/fdinfo.c"
 s = p.read_text()
 if "out_seq_printf:" in s:
     anchor = "\tif (inode) {\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT"
-    if anchor in s:
-        s = s.replace(anchor, "\tif (inode) {\n\t\tu32 mask = mark->mask & IN_ALL_EVENTS;\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT", 1)
+    if anchor not in s:
+        raise SystemExit("fdinfo inotify SUSFS block anchor not found")
+    s = s.replace(anchor, "\tif (inode) {\n\t\tu32 mask = mark->mask & IN_ALL_EVENTS;\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT", 1)
     s = s.replace("\t\tu32 mask = mark->mask & IN_ALL_EVENTS;\n\t\tseq_printf", "\t\tseq_printf", 1)
     s = s.replace("inotify_mark_user_mask(mark)", "mask")
+    fanotify = "static void fanotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)"
+    if fanotify in s:
+        s = s.replace(fanotify, "#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\nstatic void fanotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark, struct file *file)\n#else\n" + fanotify + "\n#endif", 1)
+        s = s.replace("\tunsigned int mflags = 0;\n", "\tunsigned int mflags = 0;\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n\t(void)file;\n#endif\n", 1)
     p.write_text(s)
 
 p = root / "security/selinux/avc.c"
