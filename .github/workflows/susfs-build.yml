@@ -1,5 +1,5 @@
-name: Build d1xks RKSU + SUSFS 1.5.12
-run-name: "SUSFS 1.5.12 test build for d1xks"
+name: N971N KernelSU Next + SUSFS 1.5.12
+run-name: "N971N d1xks KSUN + SUSFS v1.5.12"
 
 on:
   push:
@@ -12,9 +12,9 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-      - name: Checkout test branch
+      - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
@@ -26,26 +26,56 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential gcc-aarch64-linux-gnu clang lld llvm \
             bc bison flex libssl-dev libelf-dev libncurses-dev \
-            python3 python-is-python3 zip curl cpio rsync device-tree-compiler
+            python3 python-is-python3 zip curl cpio rsync device-tree-compiler \
+            git lz4 zlib1g-dev
 
-      - name: Build d1xks with Clang 13
+      - name: Prepare official KernelSU-Next legacy driver
+        shell: bash
         run: |
           set -euo pipefail
-          chmod +x build.sh
-          bash build.sh -m d1xks -v SUSFS-1.5.12-test -k y -l 13 -r y
+          chmod +x scripts/prepare-ksu-variant.sh
+          bash scripts/prepare-ksu-variant.sh ksun legacy
+          grep -q 'KernelSU-Next/KernelSU-Next.git' build/ksu-source-info.txt
+          test -L drivers/kernelsu
+          test "$(readlink drivers/kernelsu)" = "../ksu-src/ksun/kernel"
 
-      - name: Upload flashable ZIP
+      - name: Apply SUSFS v1.5.12 for Linux 4.14.113 + KernelSU-Next
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x apply-susfs.sh build.sh
+          bash apply-susfs.sh
+
+      - name: Build N971N d1xks kernel and flashable ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash build.sh -m d1xks -v N971N-KSUN-SUSFS-1.5.12 -k y -l 13 -r y
+
+      - name: Verify kernel configuration and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s out/.config
+          grep -q '^CONFIG_KSU=y$' out/.config
+          grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
+          grep -q 'SUSFS_VERSION "v1.5.12"' include/linux/susfs.h
+          test -d build/export
+          ZIP_COUNT=$(find build/export -maxdepth 1 -type f -name '*.zip' | wc -l)
+          test "$ZIP_COUNT" -ge 1
+          cp build/ksu-source-info.txt build/export/
+          (cd build/export && sha256sum *.zip > SHA256SUMS)
+          echo "KernelSU Next + SUSFS config verified:"
+          grep -E '^CONFIG_KSU(=|_)' out/.config
+
+      - name: Upload kernel ZIP and build metadata
         uses: actions/upload-artifact@v4
         with:
-          name: BatAxeKernel-d1xks-RKSU-SUSFS-v1.5.12-Clang13
-          path: build/export/*.zip
+          name: N971N-KSUN-SUSFS-1.5.12-${{ github.run_number }}
+          path: |
+            build/export/*.zip
+            build/export/ksu-source-info.txt
+            build/export/SHA256SUMS
           if-no-files-found: error
-          compression-level: 9
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: BatAxeKernel-SUSFS-v1.5.12-build-log
-          path: build.log
-          if-no-files-found: ignore
+          retention-days: 30
