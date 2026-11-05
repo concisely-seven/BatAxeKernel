@@ -21,14 +21,37 @@ jobs:
           fetch-depth: 1
           submodules: false
 
-      - name: Install build dependencies
+      - name: Install missing build dependencies
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential gcc-aarch64-linux-gnu clang lld llvm \
-            bc bison flex libssl-dev libelf-dev libncurses-dev \
-            python3 python-is-python3 zip curl cpio rsync device-tree-compiler \
-            git lz4 zlib1g-dev
+          set -euo pipefail
+          missing=()
+          add_if_missing() {
+            command -v "$1" >/dev/null 2>&1 || missing+=("$2")
+          }
+          add_if_missing make build-essential
+          add_if_missing bc bc
+          add_if_missing bison bison
+          add_if_missing flex flex
+          add_if_missing python3 python3
+          add_if_missing zip zip
+          add_if_missing curl curl
+          add_if_missing cpio cpio
+          add_if_missing rsync rsync
+          add_if_missing dtc device-tree-compiler
+          add_if_missing git git
+          add_if_missing lz4 lz4
+          test -f /usr/include/openssl/ssl.h || missing+=(libssl-dev)
+          test -f /usr/include/libelf.h || missing+=(libelf-dev)
+          test -f /usr/include/ncurses.h || missing+=(libncurses-dev)
+          test -f /usr/include/zlib.h || missing+=(zlib1g-dev)
+          if (("${#missing[@]}" > 0)); then
+            sudo apt-get update -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20
+            sudo apt-get install -y --no-install-recommends "${missing[@]}" python-is-python3
+          fi
+          if ! command -v python >/dev/null 2>&1; then
+            sudo ln -sf /usr/bin/python3 /usr/local/bin/python
+          fi
 
       - name: Prepare official KernelSU-Next legacy driver
         shell: bash
