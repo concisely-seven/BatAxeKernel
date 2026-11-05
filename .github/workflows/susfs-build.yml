@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - kernelsu-next-susfs-1.5.12
+      - ksun-susfs-1.5.12-modern-port
   workflow_dispatch:
 
 permissions:
