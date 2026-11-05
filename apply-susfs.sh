@@ -209,8 +209,10 @@ if "bypass_susfs_avc_spoof" not in s:
 	if (unlikely(tsid == susfs_ksu_sid && susfs_is_avc_log_spoofing_enabled)) {
 		if (rc)
 			audit_log_format(ab, " tsid=%d", susfs_kernel_sid);
-		else
+		else {
 			audit_log_format(ab, " tcontext=%s", "u:r:kernel:s0");
+			kfree(scontext);
+		}
 		goto bypass_susfs_avc_spoof;
 	}
 #endif
