@@ -295,11 +295,16 @@ static bool susfs_access_ok(const void __user *addr, unsigned long size)
 	return access_ok(VERIFY_READ, addr, size);
 }
 
+static bool susfs_access_ok_write(void __user *addr, unsigned long size)
+{
+	return access_ok(VERIFY_WRITE, addr, size);
+}
+
 static void susfs_copy_error(unsigned long arg5, int error)
 {
 	if (!arg5)
 		return;
-	if (susfs_access_ok((void __user *)arg5, sizeof(error)) &&
+	if (susfs_access_ok_write((void __user *)arg5, sizeof(error)) &&
 	    copy_to_user((void __user *)arg5, &error, sizeof(error)))
 		pr_info("susfs: failed to copy command result\n");
 }
@@ -314,7 +319,7 @@ bool susfs_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
 		return false;
 	*result = 0;
 	if (current_uid().val != 0)
-		return true;
+		return false;
 
 	switch (arg2) {
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
@@ -422,17 +427,17 @@ bool susfs_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
 		break;
 #endif
 	case CMD_SUSFS_SHOW_VERSION:
-		if (!susfs_access_ok((void __user *)arg3, sizeof(SUSFS_VERSION)) ||
+		if (!susfs_access_ok_write((void __user *)arg3, sizeof(SUSFS_VERSION)) ||
 		    copy_to_user((void __user *)arg3, SUSFS_VERSION, sizeof(SUSFS_VERSION)))
 			error = -EFAULT;
 		break;
 	case CMD_SUSFS_SHOW_VARIANT:
-		if (!susfs_access_ok((void __user *)arg3, sizeof(SUSFS_VARIANT)) ||
+		if (!susfs_access_ok_write((void __user *)arg3, sizeof(SUSFS_VARIANT)) ||
 		    copy_to_user((void __user *)arg3, SUSFS_VARIANT, sizeof(SUSFS_VARIANT)))
 			error = -EFAULT;
 		break;
 	case CMD_SUSFS_SHOW_ENABLED_FEATURES:
-		if (!arg4 || !susfs_access_ok((void __user *)arg3, arg4))
+		if (!arg4 || !susfs_access_ok_write((void __user *)arg3, arg4))
 			error = -EFAULT;
 		else
 			error = susfs_get_enabled_features((char __user *)arg3, arg4);
@@ -446,7 +451,7 @@ bool susfs_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
 #ifdef CONFIG_KSU_SUSFS_SUS_SU
 	case CMD_SUSFS_SHOW_SUS_SU_WORKING_MODE:
 		value = susfs_get_sus_su_working_mode();
-		if (!susfs_access_ok((void __user *)arg3, sizeof(value)) ||
+		if (!susfs_access_ok_write((void __user *)arg3, sizeof(value)) ||
 		    copy_to_user((void __user *)arg3, &value, sizeof(value)))
 			error = -EFAULT;
 		break;
