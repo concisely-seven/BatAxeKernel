@@ -24,6 +24,8 @@ fi
 grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h" || {
   echo "[SUSFS][ERROR] SUSFS core source is not v1.5.12"; exit 1;
 }
+# Linux 4.14 predates linux/bits.h; bitops.h provides the BIT() macros used here.
+sed -i 's|#include <linux/bits.h>|#include <linux/bitops.h>|' "$ROOT/include/linux/susfs_def.h"
 
 
 if grep -q 'susfs_is_mnt_devname_ksu' "$ROOT/fs/namespace.c" 2>/dev/null; then
