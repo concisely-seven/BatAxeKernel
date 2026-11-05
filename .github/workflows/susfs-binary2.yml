@@ -1,0 +1,76 @@
+name: Build N971N Binary2 KSUN + SUSFS 1.5.12
+run-name: "N971N Binary2 KSUN SUSFS 1.5.12 - Clang 13"
+
+on:
+  push:
+    branches:
+      - kernelsu-next-susfs-1.5.12-binary2
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout known-good base with pinned submodules
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Verify the known-good KernelSU revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C KernelSU rev-parse HEAD)" = "88e37d606fc12758421c3e36b0f61499610cfe8d"
+          echo "Pinned KernelSU source verified."
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gcc-aarch64-linux-gnu clang lld llvm \
+            bc bison flex libssl-dev libelf-dev libncurses-dev \
+            python3 python-is-python3 zip curl cpio rsync device-tree-compiler
+
+      - name: Build N971N Binary2 kernel with Clang 13
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x build.sh
+          bash build.sh -m d1xks -v N971N-Binary2-KSUN-SUSFS-1.5.12 -k y -l 13 -r y
+
+      - name: Verify generated flashable ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          zips=(build/export/*.zip)
+          test "${#zips[@]}" -eq 1
+          unzip -t "${zips[0]}"
+          unzip -p "${zips[0]}" META-INF/com/google/android/updater-script > /tmp/updater-script
+          if grep -Eiq 'Binary 7|Binaries Support: 7|Binary 8|Binary 9' /tmp/updater-script; then
+            echo "FATAL: updater script still contains Binary 7/8/9-only restriction"
+            exit 1
+          fi
+          grep -q 'N971N' /tmp/updater-script || true
+          echo "Flashable ZIP archive integrity verified."
+
+      - name: Upload flashable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: BatAxeKernel-d1xks-Binary2-KSUN-SUSFS-1.5.12-Clang13
+          path: build/export/*.zip
+          if-no-files-found: error
+          compression-level: 9
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BatAxeKernel-Binary2-SUSFS-1.5.12-build-log
+          path: build.log
+          if-no-files-found: ignore
