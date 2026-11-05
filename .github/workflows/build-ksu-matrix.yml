@@ -1,6 +1,15 @@
 name: Build KernelSU Next Legacy - N971N U2
 
 on:
+  pull_request:
+    branches: [ "rsuntk" ]
+    paths:
+      - "build.sh"
+      - "scripts/prepare-ksu-variant.sh"
+      - "ci/ksu-configs/ksu-ksun.config"
+      - ".github/workflows/build-ksu-matrix.yml"
+      - "drivers/Kconfig"
+      - "drivers/Makefile"
   workflow_dispatch:
     inputs:
       version:
@@ -62,7 +71,8 @@ jobs:
           set -euo pipefail
           chmod +x build.sh scripts/prepare-ksu-variant.sh
           bash scripts/prepare-ksu-variant.sh ksun \
-            "${{ inputs.ksun_ref }}" "${{ inputs.manager_ref }}"
+            "${{ inputs.ksun_ref || 'b933b1f728116a456fbebf27b6a8772a640cdf23' }}" \
+            "${{ inputs.manager_ref || 'b2c1ad00b755afe0db74d889b67a137f56e71fcc' }}"
 
       - name: Build matching ksuinit and ksud for arm64
         shell: bash
@@ -151,7 +161,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash build.sh -m d1xks -v "${{ inputs.version }}" -k y -l 13 -r y
+          bash build.sh -m d1xks -v "${{ inputs.version || 'N971N-KSUN-Legacy' }}" -k y -l 13 -r y
 
       - name: Verify final kernel configuration and version pairing
         shell: bash
