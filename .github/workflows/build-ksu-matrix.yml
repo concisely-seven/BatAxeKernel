@@ -1,4 +1,4 @@
-name: Build KernelSU Next Legacy - N971N U2
+name: Build KernelSU Next Legacy - N971N with official Manager v3.4.2
 
 on:
   pull_request:
@@ -15,15 +15,11 @@ on:
       version:
         description: Kernel local version suffix
         required: true
-        default: N971N-KSUN-Legacy
+        default: N971N-KSUN-v3.4.2
       ksun_ref:
-        description: KernelSU Next Legacy branch, tag or exact commit
+        description: KernelSU Next Legacy driver branch, tag or exact commit
         required: true
         default: b933b1f728116a456fbebf27b6a8772a640cdf23
-      manager_ref:
-        description: KernelSU Next Manager/userspace Dev branch or exact commit
-        required: true
-        default: b2c1ad00b755afe0db74d889b67a137f56e71fcc
 
 permissions:
   contents: read
@@ -38,132 +34,49 @@ jobs:
           fetch-depth: 1
           submodules: recursive
 
-      - name: Set up Java 21
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages and kernel build dependencies
+      - name: Install kernel build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential ccache curl flex gcc-aarch64-linux-gnu \
             git libssl-dev lz4 make python3 zip zlib1g-dev
-          sdkmanager --install "platform-tools" "platforms;android-36" "build-tools;36.1.0" "cmake;3.22.1"
 
-      - name: Set up Android NDK
-        id: ndk
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r29
-
-      - name: Set up Rust
-        run: |
-          rustup update stable
-          rustup target add aarch64-linux-android
-
-      - name: Prepare pinned KernelSU Next Legacy and Dev Manager sources
+      - name: Prepare Legacy driver with official v3.4.2 Manager ABI
         shell: bash
         run: |
           set -euo pipefail
           chmod +x build.sh scripts/prepare-ksu-variant.sh
           bash scripts/prepare-ksu-variant.sh ksun \
             "${{ inputs.ksun_ref || 'b933b1f728116a456fbebf27b6a8772a640cdf23' }}" \
-            "${{ inputs.manager_ref || 'b2c1ad00b755afe0db74d889b67a137f56e71fcc' }}"
+            "v3.4.2"
 
-      - name: Build matching ksuinit and ksud for arm64
-        shell: bash
-        env:
-          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
-          BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android: >-
-            --sysroot=${{ steps.ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot
-            -I${{ steps.ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/aarch64-linux-android
-            -I${{ steps.ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include
-        run: |
-          set -euo pipefail
-          LLVM_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          export CLANG_PATH="$LLVM_BIN/aarch64-linux-android26-clang"
-          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$CLANG_PATH"
-          BUILTINS="$("$CLANG_PATH" --print-resource-dir)/lib/linux/libclang_rt.builtins-aarch64-android.a"
-          export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wno-unused-command-line-argument -C link-arg=$BUILTINS"
-
-          cd ksu-manager-src/userspace/ksuinit
-          cargo build --target=aarch64-linux-android --release
-          cd "$GITHUB_WORKSPACE/ksu-manager-src"
-
-          mkdir -p userspace/ksud/bin/aarch64
-          cp userspace/ksuinit/target/aarch64-linux-android/release/ksuinit userspace/ksud/bin/aarch64/ksuinit
-
-          clang --target=aarch64-linux-gnu -c -nostdlib \
-            -o userspace/ksud/.lkm_image_bootstrap.o \
-            userspace/ksud/src/lkm_image_bootstrap.S
-
-          unset RUSTFLAGS CLANG_PATH CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER
-          cargo install cross --git https://github.com/cross-rs/cross --rev 66845c1
-          CROSS_NO_WARNINGS=0 cross build --target aarch64-linux-android --release \
-            --manifest-path ./userspace/ksud/Cargo.toml
-
-          mkdir -p manager/app/src/main/jniLibs/arm64-v8a
-          cp userspace/ksud/target/aarch64-linux-android/release/ksud \
-            manager/app/src/main/jniLibs/arm64-v8a/libksud.so
-
-      - name: Build Manager APK from the pinned Dev source
-        working-directory: ksu-manager-src/manager
-        run: |
-          set -euo pipefail
-          ./gradlew --no-daemon clean assembleDebug
-          APK="$(find app/build/outputs/apk/debug -maxdepth 1 -name '*.apk' | head -n 1)"
-          test -s "$APK"
-          mkdir -p "$GITHUB_WORKSPACE/build/export"
-          cp "$APK" "$GITHUB_WORKSPACE/build/export/KernelSU-Next-Manager-N971N.apk"
-
-      - name: Verify Manager v2 signature and derive kernel trust values
+      - name: Download and verify the official v3.4.2 Manager
         shell: bash
         run: |
           set -euo pipefail
-          APK="$GITHUB_WORKSPACE/build/export/KernelSU-Next-Manager-N971N.apk"
-          "$ANDROID_HOME/build-tools/36.1.0/apksigner" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apksigner.txt"
-          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' "$RUNNER_TEMP/apksigner.txt"
-
-          keytool -exportcert -alias androiddebugkey \
-            -keystore "$HOME/.android/debug.keystore" \
-            -storepass android -keypass android \
-            -file "$RUNNER_TEMP/ksun-manager-cert.der"
-
-          CERT_SIZE="$(wc -c < "$RUNNER_TEMP/ksun-manager-cert.der" | tr -d ' ')"
-          CERT_HASH="$(sha256sum "$RUNNER_TEMP/ksun-manager-cert.der" | awk '{print $1}')"
-          APK_CERT_HASH="$(sed -n 's/.*Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/apksigner.txt" | head -n 1 | tr -d ':[:space:]' | tr 'A-F' 'a-f')"
-          test -n "$APK_CERT_HASH"
-          test "$APK_CERT_HASH" = "$CERT_HASH"
-          MANAGER_COMMITS="$(git -C ksu-manager-src rev-list --count HEAD)"
-          MANAGER_VERSION_CODE="$((30000 + MANAGER_COMMITS))"
-
+          mkdir -p build/export
+          APK="build/export/KernelSU_Next_v3.4.2_33355-release.apk"
+          curl -fL --retry 3 --retry-delay 2 \
+            "https://github.com/KernelSU-Next/KernelSU-Next/releases/download/v3.4.2/KernelSU_Next_v3.4.2_33355-release.apk" \
+            -o "$APK"
+          echo "774a5511f7034a4930e881114e202319cbdc34c5aaaa5c7c6b6d2902364e4c58  $APK" | sha256sum --check -
+          echo "KSU_VERSION_OVERRIDE=33355" >> "$GITHUB_ENV"
           {
-            echo "KSU_NEXT_MANAGER_SIZE=$CERT_SIZE"
-            echo "KSU_NEXT_MANAGER_HASH=$CERT_HASH"
-            echo "KSU_VERSION_OVERRIDE=$MANAGER_VERSION_CODE"
-            echo "KSU_MANAGER_VERSION_CODE=$MANAGER_VERSION_CODE"
-          } >> "$GITHUB_ENV"
-
-          {
-            echo "manager_version_code=$MANAGER_VERSION_CODE"
-            echo "manager_certificate_size=$CERT_SIZE"
-            echo "manager_certificate_sha256=$CERT_HASH"
+            echo "manager_version=v3.4.2"
+            echo "manager_version_code=33355"
+            echo "manager_apk_sha256=774a5511f7034a4930e881114e202319cbdc34c5aaaa5c7c6b6d2902364e4c58"
+            echo "kernel_version_override=33355"
+            echo "kernel_uapi_advertised=5"
+            echo "manager_uapi=5"
+            echo "manager_signature=official-upstream-default"
           } >> build/ksu-source-info.txt
-
-          echo "Manager versionCode: $MANAGER_VERSION_CODE"
-          echo "Manager signing certificate: $CERT_HASH ($CERT_SIZE bytes)"
 
       - name: Build N971N kernel and flashable ZIP
         shell: bash
         run: |
           set -euo pipefail
-          bash build.sh -m d1xks -v "${{ inputs.version || 'N971N-KSUN-Legacy' }}" -k y -l 13 -r y
+          bash build.sh -m d1xks -v "${{ inputs.version || 'N971N-KSUN-v3.4.2' }}" -k y -l 13 -r y
 
-      - name: Verify final kernel configuration and version pairing
+      - name: Verify kernel and official Manager pairing
         shell: bash
         run: |
           set -euo pipefail
@@ -176,18 +89,19 @@ jobs:
             echo "Unexpected Manual Hook mode in KernelSU Next build" >&2
             exit 7
           fi
-          grep -Fq -- "-- KernelSU-Next: Hook mode: Kprobes" build.log
-          grep -Fq -- "-- KernelSU-Next version override: $KSU_MANAGER_VERSION_CODE" build.log
-          grep -Fq -- "-- KernelSU-Next Manager signature size: $KSU_NEXT_MANAGER_SIZE" build.log
-          grep -Fq -- "-- KernelSU-Next Manager signature hash: $KSU_NEXT_MANAGER_HASH" build.log
+          grep -Fq -- "-- KernelSU-Next version override: 33355" build.log
+          grep -Fq -- "-- KernelSU-Next Manager signature size: 0x3e6" build.log
+          grep -Fq -- "-- KernelSU-Next Manager signature hash: 79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7" build.log
+          grep -q '^kernel_uapi_advertised=5$' build/ksu-source-info.txt
+          grep -q '^manager_uapi=5$' build/ksu-source-info.txt
 
           cp build/ksu-source-info.txt build/export/
           sha256sum build/export/*.zip build/export/*.apk > build/export/SHA256SUMS
 
-      - name: Upload kernel ZIP, paired Manager APK and source metadata
+      - name: Upload kernel ZIP, official Manager APK and compatibility metadata
         uses: actions/upload-artifact@v4
         with:
-          name: N971N-U2-KernelSU-Next-Legacy-${{ github.run_number }}
+          name: N971N-U2-KernelSU-Next-Legacy-v3.4.2-${{ github.run_number }}
           path: |
             build/export/*.zip
             build/export/*.apk

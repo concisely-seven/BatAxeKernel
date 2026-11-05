@@ -3,7 +3,7 @@ set -euo pipefail
 
 VARIANT="${1:-ksun}"
 KERNEL_REF="${2:-b933b1f728116a456fbebf27b6a8772a640cdf23}"
-MANAGER_REF="${3:-b2c1ad00b755afe0db74d889b67a137f56e71fcc}"
+MANAGER_REF="${3:-v3.4.2}"
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
@@ -20,15 +20,14 @@ CONFIG="ci/ksu-configs/ksu-ksun.config"
 rm -rf "$KERNEL_SRC" "$MANAGER_SRC"
 mkdir -p ksu-src "$KERNEL_SRC" "$MANAGER_SRC"
 
-# Full history is required: Legacy Kbuild derives KSU_VERSION from git commit count.
+# Fetch the exact Legacy driver revision used by the known-booting N971N build.
 git -C "$KERNEL_SRC" init -q
 git -C "$KERNEL_SRC" remote add origin "$KSU_REPO"
 git -C "$KERNEL_SRC" fetch --tags origin "$KERNEL_REF"
 git -C "$KERNEL_SRC" checkout --detach -q FETCH_HEAD
 KERNEL_SHA="$(git -C "$KERNEL_SRC" rev-parse HEAD)"
 
-# Legacy contains the built-in kernel driver only. Manager and userspace live on Dev.
-# Keep full history because manager/build.gradle.kts uses git rev-list --count HEAD.
+# Fetch the official released Manager source only for ABI validation.
 git -C "$MANAGER_SRC" init -q
 git -C "$MANAGER_SRC" remote add origin "$KSU_REPO"
 git -C "$MANAGER_SRC" fetch --tags origin "$MANAGER_REF"
@@ -38,11 +37,12 @@ MANAGER_SHA="$(git -C "$MANAGER_SRC" rev-parse HEAD)"
 for required in \
   "$KERNEL_SRC/kernel/Kconfig" \
   "$KERNEL_SRC/kernel/Makefile" \
+  "$KERNEL_SRC/kernel/Kbuild" \
   "$KERNEL_SRC/uapi/supercall.h" \
-  "$MANAGER_SRC/manager/build.gradle.kts" \
-  "$MANAGER_SRC/userspace/ksud/Cargo.toml" \
-  "$MANAGER_SRC/userspace/ksuinit/Cargo.toml" \
+  "$KERNEL_SRC/uapi/app_profile.h" \
+  "$MANAGER_SRC/manager/app/src/main/java/com/rifsxd/ksunext/Natives.kt" \
   "$MANAGER_SRC/uapi/supercall.h" \
+  "$MANAGER_SRC/uapi/app_profile.h" \
   "$CONFIG"; do
   if [[ ! -s "$required" ]]; then
     echo "Required KernelSU Next file missing: $required" >&2
@@ -59,13 +59,51 @@ grep -q '^config KSU_MANUAL_HOOK$' "$KERNEL_SRC/kernel/Kconfig" || {
   exit 4
 }
 grep -q '^CONFIG_KSU_KPROBES_HOOK=y$' "$CONFIG" || {
-  echo "KSU config does not enable the actual Legacy Kprobes hook symbol" >&2
+  echo "KSU config does not enable CONFIG_KSU_KPROBES_HOOK" >&2
   exit 4
 }
 
-# Both source snapshots must expose the same ioctl ABI generation.
-grep -Eq 'KERNEL_SU_UAPI_VERSION[[:space:]]+6|KERNEL_SU_UAPI_VERSION[[:space:]]*=[[:space:]]*6' "$KERNEL_SRC/uapi/supercall.h"
-grep -Eq 'KERNEL_SU_UAPI_VERSION[[:space:]]+6|KERNEL_SU_UAPI_VERSION[[:space:]]*=[[:space:]]*6' "$MANAGER_SRC/uapi/supercall.h"
+# v3.4.2 expects kernel version >= 33188, UAPI v5 and App Profile v4.
+grep -q 'MINIMAL_SUPPORTED_KERNEL = 33188' \
+  "$MANAGER_SRC/manager/app/src/main/java/com/rifsxd/ksunext/Natives.kt" || {
+  echo "Selected Manager source is not the expected v3.4.2 compatibility target" >&2
+  exit 6
+}
+grep -q 'static const __u32 KERNEL_SU_UAPI_VERSION = 5;' "$MANAGER_SRC/uapi/supercall.h" || {
+  echo "Selected Manager source does not expose UAPI v5" >&2
+  exit 6
+}
+grep -q '^#define KERNEL_SU_UAPI_VERSION 6$' "$KERNEL_SRC/uapi/supercall.h" || {
+  echo "Legacy kernel UAPI changed; review compatibility before patching" >&2
+  exit 6
+}
+grep -q '^#define KSU_APP_PROFILE_VER 4$' "$KERNEL_SRC/uapi/app_profile.h"
+grep -q '^#define KSU_APP_PROFILE_VER 4$' "$MANAGER_SRC/uapi/app_profile.h"
+cmp -s "$KERNEL_SRC/uapi/app_profile.h" "$MANAGER_SRC/uapi/app_profile.h" || {
+  echo "Kernel and v3.4.2 Manager App Profile ABI differs" >&2
+  exit 6
+}
+
+# The Legacy driver is UAPI v6. v3.4.2 uses the complete v5 ABI; v6 only
+# adds PREINIT reporting and LOOKUP_SYMBOLS, neither of which this Manager uses.
+# Keep those driver implementations, but advertise the compatible v5 contract.
+sed -i 's/^#define KERNEL_SU_UAPI_VERSION 6$/#define KERNEL_SU_UAPI_VERSION 5/' \
+  "$KERNEL_SRC/uapi/supercall.h"
+grep -q '^#define KERNEL_SU_UAPI_VERSION 5$' "$KERNEL_SRC/uapi/supercall.h" || {
+  echo "Failed to apply the UAPI v5 compatibility declaration" >&2
+  exit 6
+}
+
+# Keep the official Manager signing identity baked into the upstream Legacy Kbuild.
+grep -q '^KSU_NEXT_MANAGER_SIZE := 0x3e6$' "$KERNEL_SRC/kernel/Kbuild" || {
+  echo "Unexpected official Manager signature size in Legacy Kbuild" >&2
+  exit 7
+}
+grep -q '^KSU_NEXT_MANAGER_HASH := 79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7$' \
+  "$KERNEL_SRC/kernel/Kbuild" || {
+  echo "Unexpected official Manager certificate hash in Legacy Kbuild" >&2
+  exit 7
+}
 
 # BatAxeKernel already has Kbuild/Kconfig entries for drivers/kernelsu.
 grep -q 'obj-$(CONFIG_KSU).*kernelsu/' drivers/Makefile
@@ -82,7 +120,7 @@ cp "$CONFIG" arch/arm64/configs/ksu.config
 
 mkdir -p build
 {
-  echo "variant=ksun"
+  echo "variant=ksun-legacy-official-manager"
   echo "kernel_repo=$KSU_REPO"
   echo "kernel_ref=$KERNEL_REF"
   echo "kernel_commit=$KERNEL_SHA"
@@ -90,11 +128,15 @@ mkdir -p build
   echo "manager_ref=$MANAGER_REF"
   echo "manager_commit=$MANAGER_SHA"
   echo "kernel_hook=CONFIG_KSU_KPROBES_HOOK"
-  echo "kernel_uapi=6"
-  echo "manager_uapi=6"
-  echo "kernel_history=full"
-  echo "manager_history=full"
+  echo "kernel_uapi_implemented=6"
+  echo "kernel_uapi_advertised=5"
+  echo "manager_uapi=5"
+  echo "app_profile_abi=4"
+  echo "manager_version=v3.4.2"
+  echo "manager_version_code=33355"
+  echo "manager_signature_source=upstream-kernel-kbuild-default"
 } | tee build/ksu-source-info.txt
 
 echo "Prepared KernelSU Next Legacy kernel $KERNEL_SHA"
-echo "Prepared matching Dev manager/userspace $MANAGER_SHA"
+echo "Validated official KernelSU Next Manager source $MANAGER_SHA"
+echo "Advertised UAPI v5 to the official v3.4.2 Manager; retained the driver's v6 additions."
