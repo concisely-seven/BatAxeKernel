@@ -28,9 +28,9 @@ fi
 if grep -q 'susfs_is_mnt_devname_ksu' "$ROOT/fs/namespace.c" 2>/dev/null; then
   echo "[SUSFS] Kernel hooks already patched"
 else
-  if test -e "$ROOT/fs/susfs.c" || test -e "$ROOT/include/linux/susfs.h"; then
-    echo "[SUSFS][ERROR] SUSFS files exist but version is not v1.5.12"; exit 1
-  fi
+  grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h" || {
+    echo "[SUSFS][ERROR] SUSFS core source is not v1.5.12"; exit 1;
+  }
 
   # This backport is close to Exynos 4.14.113 but three contexts differ
   # in Samsung's namespace/cmdline/task_mmu files. Apply the matching hunks,
