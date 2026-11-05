@@ -125,6 +125,9 @@ jobs:
 
           CERT_SIZE="$(wc -c < "$RUNNER_TEMP/ksun-manager-cert.der" | tr -d ' ')"
           CERT_HASH="$(sha256sum "$RUNNER_TEMP/ksun-manager-cert.der" | awk '{print $1}')"
+          APK_CERT_HASH="$(sed -n 's/.*Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/apksigner.txt" | head -n 1 | tr -d ':[:space:]' | tr 'A-F' 'a-f')"
+          test -n "$APK_CERT_HASH"
+          test "$APK_CERT_HASH" = "$CERT_HASH"
           MANAGER_COMMITS="$(git -C ksu-manager-src rev-list --count HEAD)"
           MANAGER_VERSION_CODE="$((30000 + MANAGER_COMMITS))"
 
