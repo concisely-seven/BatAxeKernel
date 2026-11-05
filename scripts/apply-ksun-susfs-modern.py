@@ -263,10 +263,10 @@ header = kernel / "include/linux/susfs.h"
 h = read(header)
 proto = 'bool susfs_handle_prctl(int option, unsigned long arg2, unsigned long arg3, unsigned long arg4, unsigned long arg5, long *result);\n'
 if "susfs_handle_prctl" not in h:
-    idx = h.rfind("\\n#endif")
+    idx = h.rfind("\n#endif")
     if idx < 0:
         raise SystemExit("SUSFS header final #endif not found")
-    h = h[:idx] + "\\n" + proto + h[idx:]
+    h = h[:idx] + "\n" + proto + h[idx:]
     write(header, h)
 
 prctl_file = kernel / "fs/susfs_prctl.c"
