@@ -317,6 +317,7 @@ if not prctl_file.exists():
     prctl_file.write_text(r'''// SPDX-License-Identifier: GPL-2.0
 /* SUSFS v1.5.12 userspace command bridge for KernelSU-Next legacy. */
 #include <linux/cred.h>
+#include <linux/errno.h>
 #include <linux/sched.h>
 #include <linux/string.h>
 #include <linux/susfs.h>
