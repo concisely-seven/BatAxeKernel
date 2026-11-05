@@ -114,7 +114,7 @@ jobs:
         run: |
           set -euo pipefail
           APK="$GITHUB_WORKSPACE/build/export/KernelSU-Next-Manager-N971N.apk"
-          apksigner verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apksigner.txt"
+          "$ANDROID_HOME/build-tools/36.1.0/apksigner" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apksigner.txt"
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' "$RUNNER_TEMP/apksigner.txt"
 
           keytool -exportcert -alias androiddebugkey \
@@ -162,7 +162,7 @@ jobs:
             echo "Unexpected Manual Hook mode in KernelSU Next build" >&2
             exit 7
           fi
-          grep -Fq -- "-- KernelSU-Next version: $KSU_MANAGER_VERSION_CODE" build.log
+          grep -Fq -- "-- KernelSU-Next version override: $KSU_MANAGER_VERSION_CODE" build.log
 
           cp build/ksu-source-info.txt build/export/
           sha256sum build/export/*.zip build/export/*.apk > build/export/SHA256SUMS
