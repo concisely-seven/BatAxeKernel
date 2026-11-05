@@ -39,7 +39,7 @@ else
   # in Samsung's namespace/cmdline/task_mmu files. Apply the matching hunks,
   # then port those three sites explicitly below.
   set +e
-  patch --batch --forward -p1 -F3 -d "$ROOT" < "$TMP_DIR/susfs-kernel.patch"
+  patch --batch --forward -p1 -F3 -x security/selinux/avc.c -d "$ROOT" < "$TMP_DIR/susfs-kernel.patch"
   PATCH_STATUS=$?
   set -e
   echo "[SUSFS] Generic backport patch status=$PATCH_STATUS; porting Samsung-specific contexts"
@@ -55,6 +55,38 @@ if "#include <linux/susfs_def.h>" not in s:
     needle = "#include <linux/fslog.h>\n"
     assert needle in s, "namespace.c Samsung fslog.h anchor not found"
     s = s.replace(needle, needle + "#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_TRY_UMOUNT)\n#include <linux/susfs_def.h>\n#endif\n", 1)
+
+# namespace.c: the first upstream hunk does not match Samsung's fslog.h block.
+decl = """#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+extern bool susfs_is_current_ksu_domain(void);
+extern bool susfs_is_current_zygote_domain(void);
+extern bool susfs_is_boot_completed_triggered;
+static DEFINE_IDA(susfs_mnt_id_ida);
+static DEFINE_IDA(susfs_mnt_group_ida);
+static int susfs_mnt_id_start = DEFAULT_SUS_MNT_ID;
+static int susfs_mnt_group_start = DEFAULT_SUS_MNT_GROUP_ID;
+#define CL_ZYGOTE_COPY_MNT_NS BIT(24)
+#define CL_COPY_MNT_NS BIT(25)
+#endif
+
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+extern void susfs_auto_add_sus_ksu_default_mount(const char __user *to_pathname);
+bool susfs_is_auto_add_sus_ksu_default_mount_enabled = true;
+#endif
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
+extern int susfs_auto_add_sus_bind_mount(const char *pathname, struct path *path_target);
+bool susfs_is_auto_add_sus_bind_mount_enabled = true;
+#endif
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
+extern void susfs_auto_add_try_umount_for_bind_mount(struct path *path);
+bool susfs_is_auto_add_try_umount_for_bind_mount_enabled = true;
+#endif
+
+"""
+if "static DEFINE_IDA(susfs_mnt_id_ida)" not in s:
+    anchor = '#include "internal.h"\n'
+    assert anchor in s, "namespace.c internal.h anchor not found"
+    s = s.replace(anchor, anchor + decl, 1)
 p.write_text(s)
 
 # cmdline.c: preserve Samsung's new_command_line path and call SUSFS before it.
@@ -152,6 +184,43 @@ if flags_old in s:
     s = s.replace(flags_old, flags_new, 1)
 elif flags_new not in s:
     raise SystemExit("task_mmu.c Samsung VmFlags anchor not found")
+p.write_text(s)
+
+# avc.c: upstream hunk assumes the newer SELinux-state signature; Samsung 4.14
+# uses security_sid_to_context(sid, ...), so port the same spoof at this callsite.
+p = root / "security/selinux/avc.c"
+s = p.read_text()
+if "bool susfs_is_avc_log_spoofing_enabled" not in s:
+    anchor = "#endif\n\nstruct avc_entry {"
+    decl = """#endif
+
+#ifdef CONFIG_KSU_SUSFS
+extern u32 susfs_ksu_sid;
+extern u32 susfs_kernel_sid;
+bool susfs_is_avc_log_spoofing_enabled = false;
+#endif
+
+struct avc_entry {"""
+    assert anchor in s, "avc.c AVC stats declaration anchor not found"
+    s = s.replace(anchor, decl, 1)
+if "bypass_susfs_avc_spoof" not in s:
+    anchor = "rc = security_sid_to_context(tsid, &scontext, &scontext_len);\n"
+    insert = anchor + """#ifdef CONFIG_KSU_SUSFS
+	if (unlikely(tsid == susfs_ksu_sid && susfs_is_avc_log_spoofing_enabled)) {
+		if (rc)
+			audit_log_format(ab, " tsid=%d", susfs_kernel_sid);
+		else
+			audit_log_format(ab, " tcontext=%s", "u:r:kernel:s0");
+		goto bypass_susfs_avc_spoof;
+	}
+#endif
+"""
+    assert anchor in s, "avc_dump_query target SID conversion anchor not found"
+    s = s.replace(anchor, insert, 1)
+    anchor = "\tBUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));"
+    insert = "#ifdef CONFIG_KSU_SUSFS\nbypass_susfs_avc_spoof:\n#endif\n" + anchor
+    assert anchor in s, "avc_dump_query tclass anchor not found"
+    s = s.replace(anchor, insert, 1)
 p.write_text(s)
 PY
 
