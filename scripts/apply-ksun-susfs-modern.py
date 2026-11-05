@@ -28,7 +28,7 @@ if "config KSU_SUSFS" not in s:
 menu "KernelSU - SUSFS"
 config KSU_SUSFS
 	bool "KernelSU addon - SUSFS"
-	depends on KSU
+	depends on KSU && THREAD_INFO_IN_TASK
 	default y
 
 config KSU_SUSFS_HAS_MAGIC_MOUNT
