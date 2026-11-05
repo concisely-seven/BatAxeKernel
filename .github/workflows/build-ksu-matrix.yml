@@ -166,7 +166,10 @@ jobs:
             echo "Unexpected Manual Hook mode in KernelSU Next build" >&2
             exit 7
           fi
+          grep -Fq -- "-- KernelSU-Next: Hook mode: Kprobes" build.log
           grep -Fq -- "-- KernelSU-Next version override: $KSU_MANAGER_VERSION_CODE" build.log
+          grep -Fq -- "-- KernelSU-Next Manager signature size: $KSU_NEXT_MANAGER_SIZE" build.log
+          grep -Fq -- "-- KernelSU-Next Manager signature hash: $KSU_NEXT_MANAGER_HASH" build.log
 
           cp build/ksu-source-info.txt build/export/
           sha256sum build/export/*.zip build/export/*.apk > build/export/SHA256SUMS
