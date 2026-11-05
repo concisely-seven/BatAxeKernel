@@ -7,7 +7,6 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 KERNEL_PATCH_URL="https://raw.githubusercontent.com/F640/begonia-ckernel-mod/fe1fe1491b2f71ee62be64eb9525c92f63fde938/patches/susfs-backport/thesillyok-susfs-1.5.12/thesillyok-susfs-1.5.12-mod.patch"
-KSUN_PATCH_URL="https://raw.githubusercontent.com/TheSillyOk/kernel_ls_patches/7acc04583b63772baf8c1d88cbde778775895798/KSUN/KSUN-SUSFS-1.5.12.patch"
 
 test -d "$ROOT/fs"
 test -f "$KSU_DIR/kernel/Kconfig"
@@ -15,10 +14,19 @@ test -L "$ROOT/drivers/kernelsu"
 test "$(readlink "$ROOT/drivers/kernelsu")" = "../ksu-src/ksun/kernel"
 
 curl -fL --retry 3 "$KERNEL_PATCH_URL" -o "$TMP_DIR/susfs-kernel.patch"
-curl -fL --retry 3 "$KSUN_PATCH_URL" -o "$TMP_DIR/susfs-ksun.patch"
+SUSFS_CORE_BASE="https://raw.githubusercontent.com/F640/begonia-ckernel-mod/fe1fe1491b2f71ee62be64eb9525c92f63fde938/patches/susfs-backport/thesillyok-susfs-1.5.12"
+if ! test -f "$ROOT/include/linux/susfs.h"; then
+  mkdir -p "$ROOT/fs" "$ROOT/include/linux"
+  curl -fL --retry 3 "$SUSFS_CORE_BASE/fs/susfs.c" -o "$ROOT/fs/susfs.c"
+  curl -fL --retry 3 "$SUSFS_CORE_BASE/include/linux/susfs.h" -o "$ROOT/include/linux/susfs.h"
+  curl -fL --retry 3 "$SUSFS_CORE_BASE/include/linux/susfs_def.h" -o "$ROOT/include/linux/susfs_def.h"
+elif ! grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"; then
+  echo "[SUSFS][ERROR] Existing SUSFS core is not v1.5.12"; exit 1
+fi
 
-if grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h" 2>/dev/null; then
-  echo "[SUSFS] Kernel layer already patched"
+
+if grep -q 'susfs_is_mnt_devname_ksu' "$ROOT/fs/namespace.c" 2>/dev/null; then
+  echo "[SUSFS] Kernel hooks already patched"
 else
   if test -e "$ROOT/fs/susfs.c" || test -e "$ROOT/include/linux/susfs.h"; then
     echo "[SUSFS][ERROR] SUSFS files exist but version is not v1.5.12"; exit 1
@@ -147,13 +155,14 @@ PY
   rm -f "$ROOT"/fs/*.rej "$ROOT"/fs/proc/*.rej "$ROOT"/fs/*.orig "$ROOT"/fs/proc/*.orig
 fi
 
-# Apply the matching KernelSU-Next bridge; never substitute the RKSU tree.
-git -C "$KSU_DIR" apply --check "$TMP_DIR/susfs-ksun.patch"
-git -C "$KSU_DIR" apply "$TMP_DIR/susfs-ksun.patch"
+# Apply the modern bridge against the pinned KernelSU-Next legacy layout.
+python3 "$ROOT/scripts/apply-ksun-susfs-modern.py" "$KSU_DIR" "$ROOT"
 
 grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"
 grep -q '^config KSU_SUSFS$' "$KSU_DIR/kernel/Kconfig"
 grep -q 'susfs_spoof_cmdline_or_bootconfig' "$ROOT/fs/proc/cmdline.c"
+grep -q 'susfs_handle_prctl' "$ROOT/kernel/sys.c"
+grep -q 'susfs_prctl.o' "$ROOT/fs/Makefile"
 grep -q 'BIT_SUS_MAPS' "$ROOT/fs/proc/task_mmu.c"
 grep -q 'CONFIG_KSU_SUSFS=y' "$ROOT/arch/arm64/configs/ksu.config"
 
