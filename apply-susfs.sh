@@ -196,6 +196,17 @@ p.write_text(s)
 
 # avc.c: upstream hunk assumes the newer SELinux-state signature; Samsung 4.14
 # uses security_sid_to_context(sid, ...), so port the same spoof at this callsite.
+# fdinfo.c: the SUSFS hunk adds a label before the legacy C89 declaration.
+p = root / "fs/notify/fdinfo.c"
+s = p.read_text()
+if "out_seq_printf:" in s:
+    anchor = "\tif (inode) {\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT"
+    if anchor in s:
+        s = s.replace(anchor, "\tif (inode) {\n\t\tu32 mask = mark->mask & IN_ALL_EVENTS;\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT", 1)
+    s = s.replace("\t\tu32 mask = mark->mask & IN_ALL_EVENTS;\n\t\tseq_printf", "\t\tseq_printf", 1)
+    s = s.replace("inotify_mark_user_mask(mark)", "mask")
+    p.write_text(s)
+
 p = root / "security/selinux/avc.c"
 s = p.read_text()
 if "bool susfs_is_avc_log_spoofing_enabled" not in s:
@@ -212,6 +223,9 @@ struct avc_entry {"""
     assert anchor in s, "avc.c AVC stats declaration anchor not found"
     s = s.replace(anchor, decl, 1)
 if "bypass_susfs_avc_spoof" not in s:
+    func_start = s.index("static void avc_dump_query(")
+    func_end = s.index("\n}\n", func_start) + 3
+    body = s[func_start:func_end]
     anchor = "rc = security_sid_to_context(tsid, &scontext, &scontext_len);\n"
     insert = anchor + """#ifdef CONFIG_KSU_SUSFS
 	if (unlikely(tsid == susfs_ksu_sid && susfs_is_avc_log_spoofing_enabled)) {
@@ -225,12 +239,13 @@ if "bypass_susfs_avc_spoof" not in s:
 	}
 #endif
 """
-    assert anchor in s, "avc_dump_query target SID conversion anchor not found"
-    s = s.replace(anchor, insert, 1)
+    assert anchor in body, "avc_dump_query target SID conversion anchor not found"
+    body = body.replace(anchor, insert, 1)
     anchor = "\tBUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));"
     insert = "#ifdef CONFIG_KSU_SUSFS\nbypass_susfs_avc_spoof:\n#endif\n" + anchor
-    assert anchor in s, "avc_dump_query tclass anchor not found"
-    s = s.replace(anchor, insert, 1)
+    assert anchor in body, "avc_dump_query tclass anchor not found"
+    body = body.replace(anchor, insert, 1)
+    s = s[:func_start] + body + s[func_end:]
 p.write_text(s)
 PY
 
