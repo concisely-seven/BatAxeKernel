@@ -85,7 +85,7 @@ submodule() {
 
     # Do not update every submodule with --remote: the old KernelSU
     # submodule is RSNTK/RKSU, not KernelSU Next. KSU is prepared separately.
-    git submodule update -f -q --init --recursive toolchain build/AIK > /dev/null
+    git submodule update -f -q --init --recursive toolchain > /dev/null
     check "Build tool submodules"
 }
 
