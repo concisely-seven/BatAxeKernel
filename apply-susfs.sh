@@ -15,14 +15,15 @@ test "$(readlink "$ROOT/drivers/kernelsu")" = "../ksu-src/ksun/kernel"
 
 curl -fL --retry 3 "$KERNEL_PATCH_URL" -o "$TMP_DIR/susfs-kernel.patch"
 SUSFS_CORE_BASE="https://raw.githubusercontent.com/F640/begonia-ckernel-mod/fe1fe1491b2f71ee62be64eb9525c92f63fde938/patches/susfs-backport/thesillyok-susfs-1.5.12"
-if ! test -f "$ROOT/include/linux/susfs.h"; then
+if ! test -f "$ROOT/fs/susfs.c" || ! test -f "$ROOT/include/linux/susfs.h" || ! test -f "$ROOT/include/linux/susfs_def.h"; then
   mkdir -p "$ROOT/fs" "$ROOT/include/linux"
   curl -fL --retry 3 "$SUSFS_CORE_BASE/fs/susfs.c" -o "$ROOT/fs/susfs.c"
   curl -fL --retry 3 "$SUSFS_CORE_BASE/include/linux/susfs.h" -o "$ROOT/include/linux/susfs.h"
   curl -fL --retry 3 "$SUSFS_CORE_BASE/include/linux/susfs_def.h" -o "$ROOT/include/linux/susfs_def.h"
-elif ! grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"; then
-  echo "[SUSFS][ERROR] Existing SUSFS core is not v1.5.12"; exit 1
 fi
+grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h" || {
+  echo "[SUSFS][ERROR] SUSFS core source is not v1.5.12"; exit 1;
+}
 
 
 if grep -q 'susfs_is_mnt_devname_ksu' "$ROOT/fs/namespace.c" 2>/dev/null; then
