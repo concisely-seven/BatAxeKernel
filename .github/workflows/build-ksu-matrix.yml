@@ -1,15 +1,15 @@
-name: N971N-U2-KSUN-Legacy-Test
+name: N971N KernelSU Next Legacy
 
 on:
   push:
     branches:
-      - chatgpt/ksun-legacy-build-test
+      - kernelsu-next
   workflow_dispatch:
     inputs:
       version:
         description: Kernel local version suffix
         required: true
-        default: N971N-U2-KSUN-TEST1
+        default: N971N-KSUN
 
 permissions:
   contents: read
@@ -49,7 +49,7 @@ jobs:
       - name: Build N971N kernel and flashable ZIP
         shell: bash
         env:
-          BUILD_VERSION: ${{ inputs.version || 'N971N-U2-KSUN-TEST1' }}
+          BUILD_VERSION: ${{ inputs.version || 'N971N-KSUN' }}
         run: |
           set -euo pipefail
           bash build.sh -m d1xks -v "$BUILD_VERSION" -k y -l 13 -r y
