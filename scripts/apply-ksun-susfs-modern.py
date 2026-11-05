@@ -117,8 +117,8 @@ endmenu
 # Initialize the SUSFS core exactly once during the built-in KernelSU init.
 p = ksu / "kernel/core/init.c"
 once(p, '#include <linux/workqueue.h>\n',
-     '#include <linux/workqueue.h>\n#ifdef CONFIG_KSU_SUSFS\n#include <linux/susfs.h>\n#endif\n',
-     "KSUN init SUSFS include")
+     '#include <linux/workqueue.h>\n#ifdef CONFIG_KSU_SUSFS\n#include <linux/susfs.h>\nextern bool susfs_is_boot_completed_triggered;\n#endif\n',
+     "KSUN init SUSFS include and boot flag declaration")
 once(p, '\tksu_feature_init();\n',
      '\tksu_feature_init();\n#ifdef CONFIG_KSU_SUSFS\n\tsusfs_init();\n#endif\n',
      "KSUN susfs_init call")
