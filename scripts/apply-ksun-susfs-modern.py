@@ -535,9 +535,13 @@ bool susfs_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
 
 # Build the command bridge and route PR_SET_NAME-compatible SUSFS prctl calls.
 p = kernel / "fs/Makefile"
-once(p, 'obj-$(CONFIG_KSU_SUSFS) += susfs.o\n',
-     'obj-$(CONFIG_KSU_SUSFS) += susfs.o susfs_prctl.o\n',
-     "SUSFS prctl object")
+s = read(p)
+if "obj-$(CONFIG_KSU_SUSFS) += susfs.o" not in s:
+    s += "\\nobj-$(CONFIG_KSU_SUSFS) += susfs.o\\n"
+if "susfs_prctl.o" not in s:
+    s = s.replace("obj-$(CONFIG_KSU_SUSFS) += susfs.o",
+                  "obj-$(CONFIG_KSU_SUSFS) += susfs.o susfs_prctl.o", 1)
+write(p, s)
 
 p = kernel / "kernel/sys.c"
 s = read(p)
