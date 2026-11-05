@@ -1,0 +1,51 @@
+name: Build d1xks RKSU + SUSFS 1.5.12
+run-name: "SUSFS 1.5.12 test build for d1xks"
+
+on:
+  push:
+    branches:
+      - kernelsu-next-susfs-1.5.12
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout test branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gcc-aarch64-linux-gnu clang lld llvm \
+            bc bison flex libssl-dev libelf-dev libncurses-dev \
+            python3 python-is-python3 zip curl cpio rsync device-tree-compiler
+
+      - name: Build d1xks with Clang 13
+        run: |
+          set -euo pipefail
+          chmod +x build.sh
+          bash build.sh -m d1xks -v SUSFS-1.5.12-test -k y -l 13 -r y
+
+      - name: Upload flashable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: BatAxeKernel-d1xks-RKSU-SUSFS-v1.5.12-Clang13
+          path: export/*.zip
+          if-no-files-found: error
+          compression-level: 9
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BatAxeKernel-SUSFS-v1.5.12-build-log
+          path: build.log
+          if-no-files-found: ignore
