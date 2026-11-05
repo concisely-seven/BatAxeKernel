@@ -125,9 +125,52 @@ once(p, '\tksu_feature_init();\n',
 
 # SUSFS core asks whether the current task is in the KSU SELinux domain.
 p = ksu / "kernel/selinux/selinux.c"
-if "bool susfs_is_current_ksu_domain(void)" not in read(p):
+s = read(p)
+if "u32 susfs_ksu_sid" not in s:
+    anchor = 'u32 ksu_file_sid __read_mostly = 0;\n'
+    add = anchor + '#ifdef CONFIG_KSU_SUSFS\nu32 susfs_ksu_sid __read_mostly = 0;\nu32 susfs_kernel_sid __read_mostly = 0;\n#endif\n'
+    if anchor not in s:
+        raise SystemExit("KSUN cached SID declaration anchor missing")
+    s = s.replace(anchor, add, 1)
+if 'susfs_ksu_sid = cached_su_sid;' not in s:
+    anchor = '    err = security_secctx_to_secid(ZYGOTE_CONTEXT, strlen(ZYGOTE_CONTEXT),\n'
+    add = '''#ifdef CONFIG_KSU_SUSFS
+    susfs_ksu_sid = cached_su_sid;
+    err = security_secctx_to_secid("u:r:kernel:s0", strlen("u:r:kernel:s0"),
+                                   &susfs_kernel_sid);
+    if (err)
+        susfs_kernel_sid = 0;
+#endif
+
+''' + anchor
+    if anchor not in s:
+        raise SystemExit("KSUN cache_sid zygote anchor missing")
+    s = s.replace(anchor, add, 1)
+if "bool susfs_is_current_ksu_domain(void)" not in s:
+    with p.open("w") as f:
+        f.write(s)
     with p.open("a") as f:
         f.write('\n#ifdef CONFIG_KSU_SUSFS\nbool susfs_is_current_ksu_domain(void)\n{\n\treturn is_ksu_domain();\n}\n\nbool susfs_is_current_zygote_domain(void)\n{\n\treturn is_zygote(current_cred());\n}\n#endif\n')
+else:
+    write(p, s)
+
+# Mark SUSFS boot-complete at the same event as KernelSU.
+p = ksu / "kernel/runtime/boot_event.c"
+s = read(p)
+if "susfs_is_boot_completed_triggered" not in s:
+    s = s.replace('bool ksu_module_mounted __read_mostly = false;\n',
+        'bool ksu_module_mounted __read_mostly = false;\n#ifdef CONFIG_KSU_SUSFS\nextern bool susfs_is_boot_completed_triggered;\n#endif\n', 1)
+    s = s.replace('    ksu_boot_completed = true;\n',
+        '    ksu_boot_completed = true;\n#ifdef CONFIG_KSU_SUSFS\n    susfs_is_boot_completed_triggered = true;\n#endif\n', 1)
+    write(p, s)
+
+# Late-loaded KSUN means Android boot has already completed.
+p = ksu / "kernel/core/init.c"
+s = read(p)
+if "susfs_is_boot_completed_triggered = true;" not in s:
+    s = s.replace('\t\tksu_boot_completed = true;\n',
+        '\t\tksu_boot_completed = true;\n#ifdef CONFIG_KSU_SUSFS\n\t\tsusfs_is_boot_completed_triggered = true;\n#endif\n', 1)
+    write(p, s)
 
 # Wire SUSFS try-umount and per-app state into the existing legacy setuid path.
 p = ksu / "kernel/feature/kernel_umount.c"
@@ -254,7 +297,7 @@ int ksu_handle_umount'''
         raise SystemExit("KSUN task-work callback anchor not found")
     s = s.replace(anchor, '\ttw->uid = new_uid;\n' + anchor, 1)
     s = s.replace('static bool ksu_kernel_umount_enabled = true;\n',
-        'static bool ksu_kernel_umount_enabled = true;\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\nbool susfs_is_umount_for_zygote_iso_service_enabled;\n#endif\n', 1)
+        'static bool ksu_kernel_umount_enabled = true;\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\nbool susfs_is_umount_for_zygote_iso_service_enabled;\n#endif\n#ifdef CONFIG_KSU_SUSFS\nbool susfs_is_boot_completed_triggered;\n#endif\n', 1)
     s = s.replace('/* SUSFS 1.5.12 integration */', '/* SUSFS 1.5.12 integration */') if '/* SUSFS 1.5.12 integration */' in s else s.replace('#include "compat/kernel_compat.h"\n', '#include "compat/kernel_compat.h"\n\n/* SUSFS 1.5.12 integration */\n', 1)
     write(p, s)
 
