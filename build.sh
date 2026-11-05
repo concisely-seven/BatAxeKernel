@@ -441,6 +441,9 @@ kernelsu() {
         separator
         git submodule init && git submodule update --remote
     fi
+
+    # Apply pinned SUSFS v1.5.12 kernel + RKSU integration patches.
+    bash ./apply-susfs.sh
 }
 
 # =============================================================================
