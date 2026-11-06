@@ -62,7 +62,30 @@ jobs:
           set -euo pipefail
           test -s out/.config
           grep -q '^CONFIG_KSU=y$' out/.config
-          grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
+          grep -q '^CONFIG_KSU_KPROBES_HOOK=y
+          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
+          grep -q 'SUSFS_VERSION "v1.5.12"' include/linux/susfs.h
+          test -d build/export
+          ZIP_COUNT=$(find build/export -maxdepth 1 -type f -name '*.zip' | wc -l)
+          test "$ZIP_COUNT" -ge 1
+          cp build/ksu-source-info.txt build/export/
+          (cd build/export && sha256sum *.zip > SHA256SUMS)
+          echo "KernelSU-Next source/version:"
+          cat build/ksu-source-info.txt
+          echo "KernelSU/SUSFS config:"
+          grep -E '^CONFIG_KSU(=|_)' out/.config
+
+      - name: Upload kernel ZIP and build metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: N971N-GoRhanHee-LegacySUSFS-KSUN-1.5.12-${{ github.run_number }}
+          path: |
+            build/export/*.zip
+            build/export/ksu-source-info.txt
+            build/export/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+ out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
           grep -q 'SUSFS_VERSION "v1.5.12"' include/linux/susfs.h
           test -d build/export
