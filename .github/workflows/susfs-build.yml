@@ -55,6 +55,8 @@ jobs:
         run: |
           set -euo pipefail
           SKIP_KSUN_PATCH=1 bash build.sh -m d1xks -v N971N-KSUN-LegacySFS15 -k y -l 13 -r y
+          # Do not trust build.sh's wrapper exit status alone: require the real kernel image.
+          test -s out/arch/arm64/boot/Image
 
       - name: Verify kernel configuration and package
         shell: bash
