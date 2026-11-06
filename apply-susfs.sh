@@ -7,7 +7,7 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 KERNEL_PATCH_URL="https://raw.githubusercontent.com/F640/begonia-ckernel-mod/fe1fe1491b2f71ee62be64eb9525c92f63fde938/patches/susfs-backport/thesillyok-susfs-1.5.12/thesillyok-susfs-1.5.12-mod.patch"
-KSUN_PATCH_URL="https://raw.githubusercontent.com/concisely-seven/BatAxeKernel/test-ksun-susfs-bridge/patches/ksun-susfs-bridge.patch"
+KSUN_PATCH_URL="https://raw.githubusercontent.com/concisely-seven/BatAxeKernel/n971n-ksun-susfs-run94-fix/patches/ksun-susfs-bridge.patch"
 
 test -d "$ROOT/fs"
 test -f "$KSU_DIR/kernel/Kconfig"
@@ -128,16 +128,30 @@ bypass_orig_flow:
 }""", 1)
 p.write_text(s)
 
-# fdinfo.c: the 4.14 inotify callback uses a C89 declaration after a label;
-# make the label target an empty statement and avoid a newer helper unavailable here.
+# fdinfo.c: the SUSFS callback receives a file pointer on this 4.14 port.
+# Hoist mask to function scope because the new SUSFS goto path can bypass the
+# original declaration nested inside "if (inode)".
 p = root / "fs/notify/fdinfo.c"
 s = p.read_text()
 s = s.replace("out_seq_printf:\\n#endif", "out_seq_printf:\\n\\t;\\n#endif")
 s = s.replace("inotify_mark_user_mask(mark)", "(mark->mask & IN_ALL_EVENTS)")
-# Keep declarations at function scope: the backport can place this declaration
-# after a label on older 4.14 sources, which Clang rejects.
-s = s.replace("static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark, struct file *file)\n{", "static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark, struct file *file)\n{\n\tu32 mask;")
-s = s.replace("u32 mask = mark->mask & IN_ALL_EVENTS;", "mask = mark->mask & IN_ALL_EVENTS;")
+fn = s.find("static void inotify_fdinfo(")
+if fn < 0:
+    raise SystemExit("fdinfo.c: inotify_fdinfo() not found")
+brace = s.find("{", fn)
+if brace < 0:
+    raise SystemExit("fdinfo.c: function body not found")
+end = s.find("\n}", brace)
+if end < 0:
+    raise SystemExit("fdinfo.c: function closing brace not found")
+body = s[brace + 1:end]
+body = re.sub(r"(?m)^[ \t]*u32[ \t]+mask[ \t]*=[ \t]*([^;]+);", r"\t\tmask = \1;", body)
+body = re.sub(r"(?m)^[ \t]*u32[ \t]+mask[ \t]*;[ \t]*\n", "", body)
+if re.search(r"\bmask\b", body):
+    body = "\n\tu32 mask;\n" + body
+s = s[:brace + 1] + body + s[end:]
+if "u32 u32 mask" in s:
+    raise SystemExit("fdinfo.c: duplicate mask type detected")
 p.write_text(s)
 
 # cmdline.c: preserve Samsung's new_command_line path and call SUSFS before it.
