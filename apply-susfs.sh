@@ -147,9 +147,25 @@ PY
   rm -f "$ROOT"/fs/*.rej "$ROOT"/fs/proc/*.rej "$ROOT"/fs/*.orig "$ROOT"/fs/proc/*.orig
 fi
 
-# Apply the matching KernelSU-Next bridge; never substitute the RKSU tree.
-git -C "$KSU_DIR" apply --check "$TMP_DIR/susfs-ksun.patch"
-git -C "$KSU_DIR" apply "$TMP_DIR/susfs-ksun.patch"
+# GoRhanHee's pinned revision already carries the SUSFS bridge in its
+# KSU sources. Do not apply the generic bridge patch a second time.
+if grep -q '^config KSU_SUSFS
+grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"
+grep -q '^config KSU_SUSFS$' "$KSU_DIR/kernel/Kconfig"
+grep -q 'susfs_spoof_cmdline_or_bootconfig' "$ROOT/fs/proc/cmdline.c"
+grep -q 'BIT_SUS_MAPS' "$ROOT/fs/proc/task_mmu.c"
+grep -q 'CONFIG_KSU_SUSFS=y' "$ROOT/arch/arm64/configs/ksu.config"
+
+echo "[SUSFS] Kernel v1.5.12 + KernelSU-Next bridge and Samsung smaps/cmdline/namespace ports verified"
+ "$KSU_DIR/kernel/Kconfig" &&
+   grep -q 'susfs_init();' "$KSU_DIR/kernel/ksu.c" &&
+   grep -q 'susfs_zygote_sid' "$KSU_DIR/kernel/core_hook.c" &&
+   grep -q 'susfs_set_ksu_sid' "$KSU_DIR/kernel/selinux/rules.c"; then
+  echo "[SUSFS] KernelSU-Next already contains the SUSFS bridge; skipping duplicate KSUN patch"
+else
+  git -C "$KSU_DIR" apply --check "$TMP_DIR/susfs-ksun.patch"
+  git -C "$KSU_DIR" apply "$TMP_DIR/susfs-ksun.patch"
+fi
 
 grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"
 grep -q '^config KSU_SUSFS$' "$KSU_DIR/kernel/Kconfig"
