@@ -438,13 +438,15 @@ kernelsu() {
 
     quotes "Initialize the exact pinned KernelSU Next source"
     git submodule update --init --recursive KernelSU
-    test -f KernelSU/kernel/setup.sh || {
-        echo "[KSU][FATAL] KernelSU setup.sh is missing"
+    # Wire the pinned in-tree KernelSU source directly. Avoid setup.sh here:
+    # upstream setup.sh performs git pull, which is inappropriate for a pinned
+    # detached submodule checkout in reproducible CI.
+    if [[ -e drivers/kernelsu && ! -L drivers/kernelsu ]]; then
+        echo "[KSU][FATAL] drivers/kernelsu exists but is not the expected submodule symlink"
         exit 1
-    }
+    fi
+    ln -sfn ../KernelSU/kernel drivers/kernelsu
 
-    # The upstream setup script creates drivers/kernelsu and wires Kconfig/Makefile.
-    bash KernelSU/kernel/setup.sh "$expected"
     local actual
     actual="$(git -C KernelSU rev-parse HEAD)"
     test "$actual" = "$expected" || {
