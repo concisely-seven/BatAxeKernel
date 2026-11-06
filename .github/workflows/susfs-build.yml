@@ -54,7 +54,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash build.sh -m d1xks -v N971N-GoRhanHee-LegacySUSFS-KSUN-1.5.12 -k y -l 13 -r y
+          SKIP_KSUN_PATCH=1 bash build.sh -m d1xks -v N971N-GoRhanHee-LegacySUSFS-KSUN-1.5.12 -k y -l 13 -r y
 
       - name: Verify kernel configuration and package
         shell: bash
