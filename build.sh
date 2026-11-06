@@ -643,9 +643,21 @@ create_module_zip() {
 
 # Fungsi untuk update updater script dengan informasi build
 update_updater_script() {
-    sed -i "s/ui_print(\" Kernel Version: \");/ui_print(\" Kernel Version: $KERNEL_VERSION\");/" build/out/$MODEL/zip/META-INF/com/google/android/updater-script
-    sed -i "s/ui_print(\" Kernel Device: \");/ui_print(\" Kernel Device: $DEVICE ($MODEL)\");/" build/out/$MODEL/zip/META-INF/com/google/android/updater-script
-    sed -i "s/ui_print(\" Kernel Toolchain: \");/ui_print(\" Kernel Toolchain: $CLANG_INFO\");/" build/out/$MODEL/zip/META-INF/com/google/android/updater-script
+    local updater="build/out/$MODEL/zip/META-INF/com/google/android/updater-script"
+
+    sed -i "s/ui_print(\\\" Kernel Version: \\\");/ui_print(\\\" Kernel Version: $KERNEL_VERSION\\\");/" "$updater"
+    sed -i "s/ui_print(\\\" Kernel Device: \\\");/ui_print(\\\" Kernel Device: $DEVICE ($MODEL)\\\");/" "$updater"
+    sed -i "s/ui_print(\\\" Kernel Toolchain: \\\");/ui_print(\\\" Kernel Toolchain: $CLANG_INFO\\\");/" "$updater"
+
+    # The upstream installer advertises Binary 7/8/9. This branch is a Binary 2
+    # compatibility test for the user's N971N; do not ship the upstream metadata.
+    sed -i 's/Kernel Based: HVD3 OneUI 4.1 (Binary 7)/Kernel Target: SM-N971N d1xks (Binary 2 test build)/' "$updater"
+    sed -i 's/Kernel Binaries Support: 7, 8, and 9/Kernel Binary Target: 2 (compatibility pending device test)/' "$updater"
+
+    grep -q 'Kernel Binary Target: 2 (compatibility pending device test)' "$updater" || {
+        echo "[FATAL] Failed to rewrite installer Binary metadata"
+        abort
+    }
 }
 
 # Fungsi untuk membuat final zip
