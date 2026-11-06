@@ -1,11 +1,12 @@
 name: N971N KernelSU Next + SUSFS 1.5.12
-run-name: "N971N d1xks KSUN + SUSFS v1.5.12"
+run-name: "N971N d1xks KSUN + SUSFS minimal boot isolation"
 
 on:
   push:
     branches:
       - test-ksun-susfs-bridge
       - n971n-ksun-susfs-run94-fix
+      - n971n-ksun-susfs-minimal-boot-test
   workflow_dispatch:
 
 permissions:
@@ -51,7 +52,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash build.sh -m d1xks -v N971N-KSUN-SUSFS-1.5.12 -k y -l 13 -r y
+          bash build.sh -m d1xks -v N971N-KSUN-SUSFS-1.5.12-MINIMAL -k y -l 13 -r y
 
       - name: Collect flashable ZIP for verification
         shell: bash
@@ -125,7 +126,7 @@ jobs:
       - name: Upload kernel ZIP and build metadata
         uses: actions/upload-artifact@v4
         with:
-          name: N971N-KSUN-SUSFS-1.5.12-${{ github.run_number }}
+          name: N971N-KSUN-SUSFS-MINIMAL-${{ github.run_number }}
           path: |
             build/export/*.zip
             build/export/ksu-source-info.txt
