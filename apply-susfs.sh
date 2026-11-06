@@ -134,10 +134,10 @@ p = root / "fs/notify/fdinfo.c"
 s = p.read_text()
 s = s.replace("out_seq_printf:\\n#endif", "out_seq_printf:\\n\\t;\\n#endif")
 s = s.replace("inotify_mark_user_mask(mark)", "(mark->mask & IN_ALL_EVENTS)")
-# Keep declarations at function scope: the backport can place this declaration
-# after a label on older 4.14 sources, which Clang rejects.
-s = s.replace("static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark, struct file *file)\n{", "static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark, struct file *file)\n{\n\tu32 mask;")
-s = s.replace("u32 mask = mark->mask & IN_ALL_EVENTS;", "mask = mark->mask & IN_ALL_EVENTS;")
+# The 4.14 callback has a two-argument signature; keep the declaration
+# inside the inode block, before the first statement, as in the original tree.
+# This avoids both the newer three-argument signature mismatch and label-scope issues.
+s = s.replace("mask = mark->mask & IN_ALL_EVENTS;", "u32 mask = mark->mask & IN_ALL_EVENTS;")
 p.write_text(s)
 
 # cmdline.c: preserve Samsung's new_command_line path and call SUSFS before it.
