@@ -63,6 +63,7 @@ jobs:
               exit 1
             }
           done
+          grep -qx '# CONFIG_KSU_KPROBES_HOOK is not set' out/.config
           grep -q 'SUSFS_VERSION "v1.5.12"' include/linux/susfs.h
           grep -q '^config KSU_SUSFS$' KernelSU/kernel/Kconfig
           grep -E '^CONFIG_(KSU|OVERLAY_FS)' out/.config
