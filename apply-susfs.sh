@@ -151,72 +151,15 @@ if "susfs_spoof_cmdline_or_bootconfig" not in s:
     s = s.replace(anchor, insert, 1)
 p.write_text(s)
 
-# task_mmu.c: port smaps directly against Samsung's unmodified 4.14 source.
-# The upstream task_mmu diff is excluded above because its overlapping hunks
-# partially apply and leave an ambiguous mix of old/new smaps code.
+# task_mmu.c: Samsung 4.14 source is patched below using structural anchors.
 p = root / "fs/proc/task_mmu.c"
 s = p.read_text()
 if "#include <linux/susfs.h>" not in s:
-    anchor = "#include <linux/freezer.h>\n"
+    anchor = "#include <linux/freezer.h>\\n"
     assert anchor in s, "task_mmu.c include anchor not found"
-    s = s.replace(anchor, anchor + "#include <linux/susfs.h>\n", 1)
-size_old = """\tif (!rollup_mode)
-\t\tseq_printf(m,
-\t\t\t   "Size:           %8lu kB\n"
-\t\t\t   "KernelPageSize: %8lu kB\n"
-\t\t\t   "MMUPageSize:    %8lu kB\n",
-\t\t\t   (vma->vm_end - vma->vm_start) >> 10,
-\t\t\t   vma_kernel_pagesize(vma) >> 10,
-\t\t\t   vma_mmu_pagesize(vma) >> 10);
-"""
-size_new = """\tif (!rollup_mode) {
-#ifdef CONFIG_KSU_SUSFS_SUS_MAP
-\t\tif (vma->vm_file &&
-\t\t    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
-\t\t    susfs_is_current_non_root_user_app_proc()) {
-\t\t\tseq_printf(m,
-\t\t\t\t   "Size:           %8lu kB\n"
-\t\t\t\t   "KernelPageSize: %8lu kB\n"
-\t\t\t\t   "MMUPageSize:    %8lu kB\n",
-\t\t\t\t   (vma->vm_end - vma->vm_start) >> 10, 4, 4);
-\t\t} else
-#endif
-\t\tseq_printf(m,
-\t\t\t   "Size:           %8lu kB\n"
-\t\t\t   "KernelPageSize: %8lu kB\n"
-\t\t\t   "MMUPageSize:    %8lu kB\n",
-\t\t\t   (vma->vm_end - vma->vm_start) >> 10,
-\t\t\t   vma_kernel_pagesize(vma) >> 10,
-\t\t\t   vma_mmu_pagesize(vma) >> 10);
-\t}
-"""
-if size_old not in s:
-    raise SystemExit("task_mmu.c original Samsung Size output anchor not found")
-s = s.replace(size_old, size_new, 1)
-flags_old = """\tif (!rollup_mode) {
-\t\tarch_show_smap(m, vma);
-\t\tshow_smap_vma_flags(m, vma);
-\t}
-"""
-flags_new = """\tif (!rollup_mode) {
-#ifdef CONFIG_KSU_SUSFS_SUS_MAP
-\t\tif (vma->vm_file &&
-\t\t    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
-\t\t    susfs_is_current_non_root_user_app_proc()) {
-\t\t\tseq_puts(m, "VmFlags: mr mw me");
-\t\t\tseq_putc(m, '\n');
-\t\t} else
-#endif
-\t\t{
-\t\t\tarch_show_smap(m, vma);
-\t\t\tshow_smap_vma_flags(m, vma);
-\t\t}
-\t}
-"""
-if flags_old not in s:
-    raise SystemExit("task_mmu.c original Samsung VmFlags anchor not found")
-s = s.replace(flags_old, flags_new, 1)
+    s = s.replace(anchor, anchor + "#include <linux/susfs.h>\\n", 1)
 p.write_text(s)
+
 # Remove the upstream backport's first SUS_MAP block; replace the Samsung
 # size-output site with an equivalent conditional, keeping rollup behavior.
 block = """#ifdef CONFIG_KSU_SUSFS_SUS_MAP
@@ -236,40 +179,38 @@ block = """#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 """
 if block in s:
     s = s.replace(block, "", 1)
-size_old = """	if (!rollup_mode)
-		seq_printf(m,
-			   "Size:           %8lu kB\n"
-			   "KernelPageSize: %8lu kB\n"
-			   "MMUPageSize:    %8lu kB\n",
-			   (vma->vm_end - vma->vm_start) >> 10,
-			   vma_kernel_pagesize(vma) >> 10,
-			   vma_mmu_pagesize(vma) >> 10);
-"""
-size_new = """	if (!rollup_mode) {
+# Locate the complete Samsung Size block by its semantic markers, not
+# whitespace-sensitive copied source text. This is the original 4.14 show_smap block.
+size_start = s.find("\\tif (!rollup_mode)\\n\\t\\tseq_printf(m,")
+if size_start < 0 or '"Size:' not in s[size_start:size_start + 500]:
+    raise SystemExit("task_mmu.c Samsung show_smap Size block not found")
+size_end_marker = "\\t\\t\\t   vma_mmu_pagesize(vma) >> 10);"
+size_end = s.find(size_end_marker, size_start)
+if size_end < 0:
+    raise SystemExit("task_mmu.c Samsung Size block terminator not found")
+size_end += len(size_end_marker)
+size_new = """\\tif (!rollup_mode) {
 #ifdef CONFIG_KSU_SUSFS_SUS_MAP
-		if (vma->vm_file &&
-		    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
-		    susfs_is_current_non_root_user_app_proc()) {
-			seq_printf(m,
-				   "Size:           %8lu kB\n"
-				   "KernelPageSize: %8lu kB\n"
-				   "MMUPageSize:    %8lu kB\n",
-				   (vma->vm_end - vma->vm_start) >> 10, 4, 4);
-		} else
+\\t\\tif (vma->vm_file &&
+\\t\\t    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
+\\t\\t    susfs_is_current_non_root_user_app_proc()) {
+\\t\\t\\tseq_printf(m,
+\\t\\t\\t\\t   \\"Size:           %8lu kB\\\\n\\"
+\\t\\t\\t\\t   \\"KernelPageSize: %8lu kB\\\\n\\"
+\\t\\t\\t\\t   \\"MMUPageSize:    %8lu kB\\\\n\\",
+\\t\\t\\t\\t   (vma->vm_end - vma->vm_start) >> 10, 4, 4);
+\\t\\t} else
 #endif
-		seq_printf(m,
-			   "Size:           %8lu kB\n"
-			   "KernelPageSize: %8lu kB\n"
-			   "MMUPageSize:    %8lu kB\n",
-			   (vma->vm_end - vma->vm_start) >> 10,
-			   vma_kernel_pagesize(vma) >> 10,
-			   vma_mmu_pagesize(vma) >> 10);
-	}
+\\t\\tseq_printf(m,
+\\t\\t\\t   \\"Size:           %8lu kB\\\\n\\"
+\\t\\t\\t   \\"KernelPageSize: %8lu kB\\\\n\\"
+\\t\\t\\t   \\"MMUPageSize:    %8lu kB\\\\n\\",
+\\t\\t\\t   (vma->vm_end - vma->vm_start) >> 10,
+\\t\\t\\t   vma_kernel_pagesize(vma) >> 10,
+\\t\\t\\t   vma_mmu_pagesize(vma) >> 10);
+\\t}
 """
-if size_old in s:
-    s = s.replace(size_old, size_new, 1)
-elif size_new not in s:
-    raise SystemExit("task_mmu.c Samsung size-output anchor not found")
+s = s[:size_start] + size_new + s[size_end:]
 
 flags_old = """	if (!rollup_mode) {
 		arch_show_smap(m, vma);
