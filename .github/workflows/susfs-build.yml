@@ -36,102 +36,10 @@ jobs:
           chmod +x scripts/prepare-ksu-variant.sh
           bash scripts/prepare-ksu-variant.sh ksun legacy-susfs
           grep -q 'repo=https://github.com/GoRhanHee/KernelSU-Next.git' build/ksu-source-info.txt
-          grep -q 'ref=legacy-susfs' build/ksu-source-info.txt
+          grep -q '^ref=legacy-susfs$' build/ksu-source-info.txt
           grep -Eq '^git_version_count=[1-9][0-9]*$' build/ksu-source-info.txt
-          grep -q '^ksu_version_scheme=30000+git_count
-          test -L drivers/kernelsu
-          test "$(readlink drivers/kernelsu)" = "../ksu-src/ksun/kernel"
-
-      - name: Apply SUSFS v1.5.12 for Linux 4.14.113 + GoRhanHee KSUN
-        shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x apply-susfs.sh build.sh
-          bash apply-susfs.sh
-
-      - name: Build N971N d1xks kernel and flashable ZIP
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash build.sh -m d1xks -v N971N-GoRhanHee-LegacySUSFS-KSUN-1.5.12 -k y -l 13 -r y
-
-      - name: Verify kernel configuration and package
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -s out/.config
-          grep -q '^CONFIG_KSU=y$' out/.config
-          grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
-          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
-          grep -q 'SUSFS_VERSION "v1.5.12"' include/linux/susfs.h
-          test -d build/export
-          ZIP_COUNT=$(find build/export -maxdepth 1 -type f -name '*.zip' | wc -l)
-          test "$ZIP_COUNT" -ge 1
-          cp build/ksu-source-info.txt build/export/
-          (cd build/export && sha256sum *.zip > SHA256SUMS)
-          echo "KernelSU-Next source/version:"
-          cat build/ksu-source-info.txt
-          echo "KernelSU/SUSFS config:"
-          grep -E '^CONFIG_KSU(=|_)' out/.config
-
-      - name: Upload kernel ZIP and build metadata
-        uses: actions/upload-artifact@v4
-        with:
-          name: N971N-GoRhanHee-LegacySUSFS-KSUN-1.5.12-${{ github.run_number }}
-          path: |
-            build/export/*.zip
-            build/export/ksu-source-info.txt
-            build/export/SHA256SUMS
-          if-no-files-found: error
-          retention-days: 30
- build/ksu-source-info.txt
-          grep -Eq '^ksu_version=([1-9][0-9]*)
-          test -L drivers/kernelsu
-          test "$(readlink drivers/kernelsu)" = "../ksu-src/ksun/kernel"
-
-      - name: Apply SUSFS v1.5.12 for Linux 4.14.113 + GoRhanHee KSUN
-        shell: bash
-        run: |
-          set -euo pipefail
-          chmod +x apply-susfs.sh build.sh
-          bash apply-susfs.sh
-
-      - name: Build N971N d1xks kernel and flashable ZIP
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash build.sh -m d1xks -v N971N-GoRhanHee-LegacySUSFS-KSUN-1.5.12 -k y -l 13 -r y
-
-      - name: Verify kernel configuration and package
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -s out/.config
-          grep -q '^CONFIG_KSU=y$' out/.config
-          grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
-          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
-          grep -q 'SUSFS_VERSION "v1.5.12"' include/linux/susfs.h
-          test -d build/export
-          ZIP_COUNT=$(find build/export -maxdepth 1 -type f -name '*.zip' | wc -l)
-          test "$ZIP_COUNT" -ge 1
-          cp build/ksu-source-info.txt build/export/
-          (cd build/export && sha256sum *.zip > SHA256SUMS)
-          echo "KernelSU-Next source/version:"
-          cat build/ksu-source-info.txt
-          echo "KernelSU/SUSFS config:"
-          grep -E '^CONFIG_KSU(=|_)' out/.config
-
-      - name: Upload kernel ZIP and build metadata
-        uses: actions/upload-artifact@v4
-        with:
-          name: N971N-GoRhanHee-LegacySUSFS-KSUN-1.5.12-${{ github.run_number }}
-          path: |
-            build/export/*.zip
-            build/export/ksu-source-info.txt
-            build/export/SHA256SUMS
-          if-no-files-found: error
-          retention-days: 30
- build/ksu-source-info.txt
+          grep -q '^ksu_version_scheme=30000+git_count$' build/ksu-source-info.txt
+          grep -Eq '^ksu_version=[1-9][0-9]*$' build/ksu-source-info.txt
           test -L drivers/kernelsu
           test "$(readlink drivers/kernelsu)" = "../ksu-src/ksun/kernel"
 
