@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - test-ksun-susfs-bridge
+      - n971n-ksun-susfs-run94-fix
   workflow_dispatch:
 
 permissions:
@@ -95,7 +96,38 @@ jobs:
         run: |
           set -euo pipefail
           test -s out/.config
-          grep -q '^CONFIG_KSU=y$' out/.config
+          test -s out/arch/arm64/boot/Image
+          test -s out/fs/susfs.o
+          grep -q '^CONFIG_KSU=y
+          grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
+          grep -q 'SUSFS_VERSION "v1.5.12"' include/linux/susfs.h
+          test -d build/export
+          ZIP_COUNT=$(find build/export -maxdepth 1 -type f -name '*.zip' | wc -l)
+          test "$ZIP_COUNT" -ge 1
+          for z in build/export/*.zip; do
+            unzip -t "$z" >/dev/null
+            unzip -Z1 "$z" | grep -qx 'boot.img'
+            unzip -Z1 "$z" | grep -qx 'dtb.img'
+            unzip -Z1 "$z" | grep -qx 'dtbo.img'
+            unzip -Z1 "$z" | grep -qx 'META-INF/com/google/android/updater-script'
+          done
+          cp build/ksu-source-info.txt build/export/
+          (cd build/export && sha256sum *.zip > SHA256SUMS)
+          echo "KernelSU Next + SUSFS config verified:"
+          grep -E '^CONFIG_KSU(=|_)' out/.config
+
+      - name: Upload kernel ZIP and build metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: N971N-KSUN-SUSFS-1.5.12-${{ github.run_number }}
+          path: |
+            build/export/*.zip
+            build/export/ksu-source-info.txt
+            build/export/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+ out/.config
           grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
           grep -q 'SUSFS_VERSION "v1.5.12"' include/linux/susfs.h
