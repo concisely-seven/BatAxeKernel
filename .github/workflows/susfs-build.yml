@@ -98,7 +98,8 @@ jobs:
         run: |
           set -euxo pipefail
           test -s out/.config
-          test -s out/arch/arm64/boot/Image
+          # build.sh moves Image into AIK and packages the resulting boot.img;
+          # verify the final boot image in the ZIP instead of the moved-away path.
           test -s out/fs/susfs.o
           grep -q '^CONFIG_KSU=y$' out/.config
           grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
@@ -111,6 +112,8 @@ jobs:
           for z in build/export/*.zip; do
             unzip -t "$z" >/dev/null
             unzip -Z1 "$z" | grep -qx 'boot.img'
+            unzip -p "$z" boot.img > /tmp/n971n-verified-boot.img
+            test -s /tmp/n971n-verified-boot.img
             unzip -Z1 "$z" | grep -qx 'dtb.img'
             unzip -Z1 "$z" | grep -qx 'dtbo.img'
             unzip -Z1 "$z" | grep -qx 'META-INF/com/google/android/updater-script'
