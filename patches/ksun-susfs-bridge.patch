@@ -16,7 +16,7 @@ diff --git a/kernel/Kconfig b/kernel/Kconfig
 index 0000000..0000000 100644
 --- a/kernel/Kconfig
 +++ b/kernel/Kconfig
-@@ -76,6 +76,88 @@ config KSU_SYSCALL_TABLE_HOOK
+@@ -76,8 +76,93 @@ config KSU_SYSCALL_TABLE_HOOK
  	  Patch sys_call_table entries directly to hook syscalls without
  	  kprobes or tracepoints. Intended for non-GKI kernels where kprobes
  	  are unavailable or non-functional.
@@ -114,7 +114,7 @@ diff --git a/kernel/core/init.c b/kernel/core/init.c
 index 0000000..0000000 100644
 --- a/kernel/core/init.c
 +++ b/kernel/core/init.c
-@@ -4,6 +4,9 @@
+@@ -4,7 +4,10 @@
  #include <linux/module.h>
  #include <linux/rcupdate.h>
  #include <linux/sched.h>
@@ -150,7 +150,7 @@ index 0000000..0000000 100644
  #ifndef KSU_HAS_PATH_UMOUNT
  #include <linux/syscalls.h>
  #endif
-@@ -122,18 +125,6 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+@@ -122,19 +125,6 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
  {
  	struct umount_tw *tw;
  
@@ -170,7 +170,7 @@ index 0000000..0000000 100644
  	// There are 6 scenarios:
  	// 1. Normal app: zygote -> appuid
  	// 2. Isolated process forked from zygote: zygote -> isolated_process
-@@ -145,6 +136,20 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+@@ -145,7 +136,18 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
  	if (!is_appuid(new_uid) && new_uid != WEBVIEW_ZYGOTE_UID && !is_isolated_process(new_uid)) {
  		return 0;
  	}
