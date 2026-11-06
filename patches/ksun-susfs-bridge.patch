@@ -1,28 +1,31 @@
-From 87e7232b1083f78ebcc703961271275536a54d31 Mon Sep 17 00:00:00 2001
-From: Heavietnam and OpenAI Codex <canar1406@users.noreply.github.com>
-Date: Sun, 9 Aug 2026 14:01:10 +0000
-Subject: [PATCH] kernel: bridge KernelSU-Next legacy to SUSFS
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: OpenAI <noreply@openai.com>
+Subject: [PATCH] kernel: integrate SUSFS with KernelSU-Next legacy
+
+This patch targets KernelSU-Next legacy commit b933b1f728116a456fbebf27b6a8772a640cdf23.
+It adds SUSFS Kconfig options, initializes SUSFS, and marks app tasks for SUSFS
+without changing KernelSU's mount/unmount implementation.
 
 ---
- kernel/Kconfig                 | 77 ++++++++++++++++++++++++++++++++++
- kernel/core/init.c             |  7 ++++
- kernel/feature/kernel_umount.c | 53 ++++++++++++++++-------
- 3 files changed, 122 insertions(+), 15 deletions(-)
+ kernel/Kconfig                 | 78 ++++++++++++++++++++++++++++++++++++++++++
+ kernel/core/init.c             |  7 +++++
+ kernel/feature/kernel_umount.c | 15 ++++++--
+ 3 files changed, 97 insertions(+), 3 deletions(-)
 
 diff --git a/kernel/Kconfig b/kernel/Kconfig
-index 5d1ad6e4..3e89e081 100644
+index 0000000..0000000 100644
 --- a/kernel/Kconfig
 +++ b/kernel/Kconfig
-@@ -59,4 +59,81 @@ config KSU_KPROBES_HOOK
- 	  Enable KPROBES, KRETPROBES and TRACEPOINT hook for KernelSU core.
- 	  This should not be used on kernel below 5.10.
+@@ -76,6 +76,78 @@ config KSU_SYSCALL_TABLE_HOOK
+ 	  Patch sys_call_table entries directly to hook syscalls without
+ 	  kprobes or tracepoints. Intended for non-GKI kernels where kprobes
+ 	  are unavailable or non-functional.
+ 	  Requires kernel >= 4.17 (pt_regs-based syscall ABI).
  
 +config KSU_SUSFS
 +	bool "KernelSU addon - SUSFS"
 +	depends on KSU
 +	default y
-+	help
-+	  Enable the SUSFS kernel extension for KernelSU.
 +
 +config KSU_SUSFS_HAS_MAGIC_MOUNT
 +	bool "KernelSU has Magic Mount support"
@@ -94,12 +97,15 @@ index 5d1ad6e4..3e89e081 100644
 +	depends on KSU_SUSFS
 +	default y
 +
+ endchoice
+ 
  endmenu
 diff --git a/kernel/core/init.c b/kernel/core/init.c
-index 3c151c6b..b7b0dc9c 100644
+index 0000000..0000000 100644
 --- a/kernel/core/init.c
 +++ b/kernel/core/init.c
-@@ -5,6 +5,9 @@
+@@ -4,6 +4,9 @@
+ #include <linux/module.h>
  #include <linux/rcupdate.h>
  #include <linux/sched.h>
  #include <linux/workqueue.h>
@@ -107,9 +113,9 @@ index 3c151c6b..b7b0dc9c 100644
 +#include <linux/susfs.h>
 +#endif
  
+ #include "preinit/preinit.h"
  #include "policy/allowlist.h"
- #include "policy/app_profile.h"
-@@ -98,6 +101,10 @@ int __init kernelsu_init(void)
+@@ -105,6 +108,10 @@ int __init kernelsu_init(void)
  
  	ksu_feature_init();
  
@@ -117,11 +123,11 @@ index 3c151c6b..b7b0dc9c 100644
 +	susfs_init();
 +#endif
 +
- 	ksu_supercalls_init();
+ 	ksu_sulog_init();
  
- 	
+ 	ksu_adb_root_init();
 diff --git a/kernel/feature/kernel_umount.c b/kernel/feature/kernel_umount.c
-index ab11bfaf..8f85917d 100644
+index 0000000..0000000 100644
 --- a/kernel/feature/kernel_umount.c
 +++ b/kernel/feature/kernel_umount.c
 @@ -9,6 +9,9 @@
@@ -134,62 +140,7 @@ index ab11bfaf..8f85917d 100644
  #ifndef KSU_HAS_PATH_UMOUNT
  #include <linux/syscalls.h>
  #endif
-@@ -79,10 +82,12 @@ static void ksu_sys_umount(const char *mnt, int flags)
- 
- #endif
- 
--static void try_umount(const char *mnt, int flags)
-+void ksu_try_umount(const char *mnt, bool check_mnt, int flags, uid_t uid)
- {
- 	struct path path;
- 	int err = kern_path(mnt, 0, &path);
-+	(void)check_mnt;
-+	(void)uid;
- 	if (err) {
- 		return;
- 	}
-@@ -95,8 +100,23 @@ static void try_umount(const char *mnt, int flags)
-     ksu_umount_mnt(mnt, &path, flags);
- }
- 
-+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
-+void susfs_try_umount_all(uid_t uid)
-+{
-+	susfs_try_umount(uid);
-+	ksu_try_umount("/system", false, 0, uid);
-+	ksu_try_umount("/system_ext", false, 0, uid);
-+	ksu_try_umount("/vendor", false, 0, uid);
-+	ksu_try_umount("/product", false, 0, uid);
-+	ksu_try_umount("/odm", false, 0, uid);
-+	ksu_try_umount("/data/adb/modules", false, MNT_DETACH, uid);
-+	ksu_try_umount("/debug_ramdisk", false, MNT_DETACH, uid);
-+}
-+#endif
-+
- struct umount_tw {
- 	struct callback_head cb;
-+	uid_t uid;
- };
- 
- static void umount_tw_func(struct callback_head *cb)
-@@ -104,11 +124,15 @@ static void umount_tw_func(struct callback_head *cb)
- 	struct umount_tw *tw = container_of(cb, struct umount_tw, cb);
- 	const struct cred *saved = override_creds(ksu_cred);
- 
-+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
-+	susfs_try_umount_all(tw->uid);
-+#endif
-+
-     struct mount_entry *entry;
-     down_read(&mount_list_lock);
-     list_for_each_entry(entry, &mount_list, list) {
-         pr_info("%s: unmounting: %s flags: 0x%x\n", __func__, entry->umountable, entry->flags);
--        try_umount(entry->umountable, entry->flags);
-+        ksu_try_umount(entry->umountable, false, entry->flags, tw->uid);
-     }
-     up_read(&mount_list_lock);
- 
-@@ -121,19 +145,6 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+@@ -122,18 +125,6 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
  {
  	struct umount_tw *tw;
  
@@ -206,10 +157,11 @@ index ab11bfaf..8f85917d 100644
 -		return 0;
 -	}
 -
-     // There are 6 scenarios:
-     // 1. Normal app: zygote -> appuid
-     // 2. Isolated process forked from zygote: zygote -> isolated_process
-@@ -149,6 +160,17 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+ 	// There are 6 scenarios:
+ 	// 1. Normal app: zygote -> appuid
+ 	// 2. Isolated process forked from zygote: zygote -> isolated_process
+@@ -145,6 +136,20 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+ 	if (!is_appuid(new_uid) && new_uid != WEBVIEW_ZYGOTE_UID && !is_isolated_process(new_uid)) {
  		return 0;
  	}
  
@@ -219,21 +171,11 @@ index ab11bfaf..8f85917d 100644
 +	task_unlock(current);
 +#endif
 +
-+	// Mark SUSFS state even when no module is mounted, then skip unmount work.
++	// Preserve KernelSU's original early-exit conditions after SUSFS task marking.
 +	if (!ksu_module_mounted || !ksu_kernel_umount_enabled || !ksu_cred) {
 +		return 0;
 +	}
 +
- 	// check old process's selinux context, if it is not zygote, ignore it!
- 	// because some su apps may setuid to untrusted_app but they are in global mount namespace
- 	// when we umount for such process, that is a disaster!
-@@ -166,6 +188,7 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+ 	if (!ksu_uid_should_umount(new_uid) && !is_isolated_process(new_uid)) {
  		return 0;
- 
- 	tw->cb.func = umount_tw_func;
-+	tw->uid = new_uid;
- 
- 	int err = task_work_add(current, &tw->cb, TWA_RESUME);
- 	if (err) {
--- 
-2.43.0
+ 	}
