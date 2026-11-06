@@ -176,7 +176,7 @@ index 0000000..0000000 100644
  	}
  
 +#ifdef CONFIG_KSU_SUSFS
-+\tsusfs_set_current_non_root_user_app_proc();
++	susfs_set_current_non_root_user_app_proc();
 +#endif
 +
 +	// Preserve KernelSU's original early-exit conditions after SUSFS task marking.
