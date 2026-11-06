@@ -41,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x build.sh
-          bash build.sh -m d1xks -v N971N-Binary2-KSUN-SUSFS-1.5.12 -k y -l 13 -r y
+          bash build.sh -m d1xks -v B2-KSUN-SFS512 -k y -l 13 -r y
 
       - name: Verify generated flashable ZIP
         shell: bash
