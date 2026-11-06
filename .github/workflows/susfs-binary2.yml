@@ -52,7 +52,6 @@ jobs:
           for option in \
             CONFIG_KSU=y \
             CONFIG_KSU_SUSFS=y \
-            CONFIG_KSU_SUSFS=y \
             CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y \
             CONFIG_KSU_SUSFS_SUS_PATH=y \
             CONFIG_KSU_SUSFS_SUS_MOUNT=y \
