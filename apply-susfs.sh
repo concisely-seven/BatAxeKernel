@@ -44,7 +44,7 @@ else
   echo "[SUSFS] Generic backport patch status=$PATCH_STATUS; porting Samsung-specific contexts"
 
   python3 - "$ROOT" <<'PY'
-import pathlib, sys
+import pathlib, re, sys
 root = pathlib.Path(sys.argv[1])
 
 # namespace.c: Samsung's 4.14 tree has fslog.h; locate includes by lines,
