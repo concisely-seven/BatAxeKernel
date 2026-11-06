@@ -10,7 +10,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 EXPECTED_KSU_COMMIT="d4b7ffbbe19d6bffcafad9962439427727b74b05"
 SUSFS_SOURCE_BASE="https://raw.githubusercontent.com/F640/begonia-ckernel-mod/fe1fe1491b2f71ee62be64eb9525c92f63fde938/patches/susfs-backport/thesillyok-susfs-1.5.12"
 KERNEL_PATCH_URL="$SUSFS_SOURCE_BASE/thesillyok-susfs-1.5.12-mod.patch"
-KSU_PATCH_URL="https://raw.githubusercontent.com/TheSillyOk/kernel_ls_patches/7acc04583b63772baf8c1d88cbde778775895798/RKSU/RKSU-SUSFS-1.5.12.patch"
+KSU_PATCH_URL="https://raw.githubusercontent.com/TheSillyOk/kernel_ls_patches/2730a9062650fc44d106614a281142a5cb9627c5/KSUN/KSUN-SUSFS-1.5.12.patch"
 
 test -d "$ROOT/fs"
 test -f "$KSU_DIR/kernel/Kconfig"
