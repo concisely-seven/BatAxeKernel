@@ -17,6 +17,16 @@ test "$(readlink "$ROOT/drivers/kernelsu")" = "../ksu-src/ksun/kernel"
 curl -fL --retry 3 "$KERNEL_PATCH_URL" -o "$TMP_DIR/susfs-kernel.patch"
 curl -fL --retry 3 "$KSUN_PATCH_URL" -o "$TMP_DIR/susfs-ksun.patch"
 
+# The upstream avc.c hunk targets a newer SELinux function signature and
+# fuzzily lands inside avc_init() on this 4.14 tree. Port that hunk below.
+python3 - "$TMP_DIR/susfs-kernel.patch" <<'PYFILTER'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+parts = p.read_text().split("diff --git ")
+kept = [x for x in parts if not x.startswith("a/security/selinux/avc.c ")]
+p.write_text("".join("diff --git " + x for x in kept))
+PYFILTER
+
 if grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h" 2>/dev/null; then
   echo "[SUSFS] Kernel layer already patched"
 else
@@ -56,6 +66,74 @@ if "#include <linux/susfs_def.h>" not in s:
     needle = "#include <linux/fslog.h>\n"
     assert needle in s, "namespace.c Samsung fslog.h anchor not found"
     s = s.replace(needle, needle + "#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_TRY_UMOUNT)\n#include <linux/susfs_def.h>\n#endif\n", 1)
+# The upstream first namespace hunk does not match Samsung's fslog.h
+# include block. Install its declarations explicitly before SUSFS call sites.
+ns_decl = r'''\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+extern bool susfs_is_current_ksu_domain(void);
+extern bool susfs_is_current_zygote_domain(void);
+extern bool susfs_is_boot_completed_triggered;
+static DEFINE_IDA(susfs_mnt_id_ida);
+static DEFINE_IDA(susfs_mnt_group_ida);
+static int susfs_mnt_id_start = DEFAULT_SUS_MNT_ID;
+static int susfs_mnt_group_start = DEFAULT_SUS_MNT_GROUP_ID;
+#define CL_ZYGOTE_COPY_MNT_NS BIT(24)
+#define CL_COPY_MNT_NS BIT(25)
+#endif
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+extern void susfs_auto_add_sus_ksu_default_mount(const char __user *to_pathname);
+bool susfs_is_auto_add_sus_ksu_default_mount_enabled = true;
+#endif
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
+extern int susfs_auto_add_sus_bind_mount(const char *pathname, struct path *path_target);
+bool susfs_is_auto_add_sus_bind_mount_enabled = true;
+#endif
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
+extern void susfs_auto_add_try_umount_for_bind_mount(struct path *path);
+bool susfs_is_auto_add_try_umount_for_bind_mount_enabled = true;
+#endif
+'''
+if "extern bool susfs_is_current_ksu_domain(void);" not in s:
+    anchor = "#include <linux/susfs_def.h>\\n#endif\\n"
+    assert anchor in s, "namespace.c SUSFS header anchor not found"
+    s = s.replace(anchor, anchor + ns_decl, 1)
+p.write_text(s)
+
+# avc.c: the 4.14 signature is avc_dump_query(ab, ssid, tsid, tclass),
+# and security_sid_to_context() has no selinux_state argument.
+p = root / "security/selinux/avc.c"
+s = p.read_text()
+if "susfs_is_avc_log_spoofing_enabled" not in s:
+    anchor = "struct avc_entry {\\n"
+    decl = """#ifdef CONFIG_KSU_SUSFS
+extern u32 susfs_ksu_sid;
+extern u32 susfs_kernel_sid;
+bool susfs_is_avc_log_spoofing_enabled = false;
+#endif
+
+"""
+    assert anchor in s, "avc.c struct avc_entry anchor not found"
+    s = s.replace(anchor, decl + anchor, 1)
+needle = """\\trc = security_sid_to_context(tsid, &scontext, &scontext_len);\\n\\tif (rc)\\n\\t\\taudit_log_format(ab, " tsid=%d", tsid);"""
+insert = """\\trc = security_sid_to_context(tsid, &scontext, &scontext_len);\\n#ifdef CONFIG_KSU_SUSFS
+\\tif (unlikely(tsid == susfs_ksu_sid && susfs_is_avc_log_spoofing_enabled)) {
+\\t\\tif (!rc)
+\\t\\t\\tkfree(scontext);
+\\t\\tif (rc)
+\\t\\t\\taudit_log_format(ab, " tsid=%d", susfs_kernel_sid);
+\\t\\telse
+\\t\\t\\taudit_log_format(ab, " tcontext=%s", "u:r:kernel:s0");
+\\t\\tgoto bypass_orig_flow;
+\\t}
+#endif
+\\tif (rc)
+\\t\\taudit_log_format(ab, " tsid=%d", tsid);"""
+if "goto bypass_orig_flow;" not in s:
+    assert needle in s, "avc.c target SID conversion anchor not found"
+    s = s.replace(needle, insert, 1)
+label = """\\tBUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));"""
+if "bypass_orig_flow:" not in s:
+    assert label in s, "avc.c tclass validation anchor not found"
+    s = s.replace(label, "#ifdef CONFIG_KSU_SUSFS\\nbypass_orig_flow:\\n#endif\\n" + label, 1)
 p.write_text(s)
 
 # cmdline.c: preserve Samsung's new_command_line path and call SUSFS before it.
