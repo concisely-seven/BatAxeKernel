@@ -511,6 +511,7 @@ kernel() {
     test -f arch/arm64/configs/bataxe.config || abort
     test -f "arch/arm64/configs/$KSU_NEXT" || abort
 
+    mkdir -p out
     ARCH=arm64 scripts/kconfig/merge_config.sh -m -O out \
         "arch/arm64/configs/$KERNEL_DEFCONFIG" \
         arch/arm64/configs/bataxe.config \
