@@ -3,4 +3,4 @@
 	url = https://github.com/GoRhanHee/exynos9820_toolchain.git
 [submodule "KernelSU"]
 	path = KernelSU
-	url = https://github.com/rsuntk/KernelSU.git
+	url = https://github.com/KernelSU-Next/KernelSU-Next.git
