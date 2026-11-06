@@ -7,7 +7,7 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 # This is the exact KernelSU submodule revision from the known-good kernelsu-next branch.
-EXPECTED_KSU_COMMIT="88e37d606fc12758421c3e36b0f61499610cfe8d"
+EXPECTED_KSU_COMMIT="d4b7ffbbe19d6bffcafad9962439427727b74b05"
 SUSFS_SOURCE_BASE="https://raw.githubusercontent.com/F640/begonia-ckernel-mod/fe1fe1491b2f71ee62be64eb9525c92f63fde938/patches/susfs-backport/thesillyok-susfs-1.5.12"
 KERNEL_PATCH_URL="$SUSFS_SOURCE_BASE/thesillyok-susfs-1.5.12-mod.patch"
 KSU_PATCH_URL="https://raw.githubusercontent.com/TheSillyOk/kernel_ls_patches/7acc04583b63772baf8c1d88cbde778775895798/RKSU/RKSU-SUSFS-1.5.12.patch"
