@@ -68,7 +68,7 @@ if "#include <linux/susfs_def.h>" not in s:
     s = s.replace(needle, needle + "#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_TRY_UMOUNT)\n#include <linux/susfs_def.h>\n#endif\n", 1)
 # The upstream first namespace hunk does not match Samsung's fslog.h
 # include block. Install its declarations explicitly before SUSFS call sites.
-ns_decl = r'''\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+ns_decl = '''\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 extern bool susfs_is_current_ksu_domain(void);
 extern bool susfs_is_current_zygote_domain(void);
 extern bool susfs_is_boot_completed_triggered;
@@ -93,7 +93,7 @@ bool susfs_is_auto_add_try_umount_for_bind_mount_enabled = true;
 #endif
 '''
 if "extern bool susfs_is_current_ksu_domain(void);" not in s:
-    anchor = "#include <linux/susfs_def.h>\\n#endif\\n"
+    anchor = "#include <linux/susfs_def.h>\n#endif\n"
     assert anchor in s, "namespace.c SUSFS header anchor not found"
     s = s.replace(anchor, anchor + ns_decl, 1)
 p.write_text(s)
@@ -103,7 +103,7 @@ p.write_text(s)
 p = root / "security/selinux/avc.c"
 s = p.read_text()
 if "susfs_is_avc_log_spoofing_enabled" not in s:
-    anchor = "struct avc_entry {\\n"
+    anchor = "struct avc_entry {\n"
     decl = """#ifdef CONFIG_KSU_SUSFS
 extern u32 susfs_ksu_sid;
 extern u32 susfs_kernel_sid;
@@ -113,27 +113,27 @@ bool susfs_is_avc_log_spoofing_enabled = false;
 """
     assert anchor in s, "avc.c struct avc_entry anchor not found"
     s = s.replace(anchor, decl + anchor, 1)
-needle = """\\trc = security_sid_to_context(tsid, &scontext, &scontext_len);\\n\\tif (rc)\\n\\t\\taudit_log_format(ab, " tsid=%d", tsid);"""
-insert = """\\trc = security_sid_to_context(tsid, &scontext, &scontext_len);\\n#ifdef CONFIG_KSU_SUSFS
-\\tif (unlikely(tsid == susfs_ksu_sid && susfs_is_avc_log_spoofing_enabled)) {
-\\t\\tif (!rc)
-\\t\\t\\tkfree(scontext);
-\\t\\tif (rc)
-\\t\\t\\taudit_log_format(ab, " tsid=%d", susfs_kernel_sid);
-\\t\\telse
-\\t\\t\\taudit_log_format(ab, " tcontext=%s", "u:r:kernel:s0");
-\\t\\tgoto bypass_orig_flow;
-\\t}
+needle = """\trc = security_sid_to_context(tsid, &scontext, &scontext_len);\n\tif (rc)\n\t\taudit_log_format(ab, " tsid=%d", tsid);"""
+insert = """\trc = security_sid_to_context(tsid, &scontext, &scontext_len);\n#ifdef CONFIG_KSU_SUSFS
+\tif (unlikely(tsid == susfs_ksu_sid && susfs_is_avc_log_spoofing_enabled)) {
+\t\tif (!rc)
+\t\t\tkfree(scontext);
+\t\tif (rc)
+\t\t\taudit_log_format(ab, " tsid=%d", susfs_kernel_sid);
+\t\telse
+\t\t\taudit_log_format(ab, " tcontext=%s", "u:r:kernel:s0");
+\t\tgoto bypass_orig_flow;
+\t}
 #endif
-\\tif (rc)
-\\t\\taudit_log_format(ab, " tsid=%d", tsid);"""
+\tif (rc)
+\t\taudit_log_format(ab, " tsid=%d", tsid);"""
 if "goto bypass_orig_flow;" not in s:
     assert needle in s, "avc.c target SID conversion anchor not found"
     s = s.replace(needle, insert, 1)
-label = """\\tBUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));"""
+label = """\tBUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));"""
 if "bypass_orig_flow:" not in s:
     assert label in s, "avc.c tclass validation anchor not found"
-    s = s.replace(label, "#ifdef CONFIG_KSU_SUSFS\\nbypass_orig_flow:\\n#endif\\n" + label, 1)
+    s = s.replace(label, "#ifdef CONFIG_KSU_SUSFS\nbypass_orig_flow:\n#endif\n" + label, 1)
 p.write_text(s)
 
 # cmdline.c: preserve Samsung's new_command_line path and call SUSFS before it.
@@ -145,7 +145,7 @@ if "susfs_spoof_cmdline_or_bootconfig" not in s:
     assert anchor in s, "cmdline.c include anchor not found"
     s = s.replace(anchor, anchor + decl, 1)
     anchor = "static int cmdline_proc_show(struct seq_file *m, void *v)\n{\n"
-    insert = anchor + "#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\n\tif (!susfs_spoof_cmdline_or_bootconfig(m)) {\n\t\tseq_putc(m, '\\n');\n\t\treturn 0;\n\t}\n#endif\n"
+    insert = anchor + "#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\n\tif (!susfs_spoof_cmdline_or_bootconfig(m)) {\n\t\tseq_putc(m, '\n');\n\t\treturn 0;\n\t}\n#endif\n"
     assert anchor in s, "cmdline_proc_show anchor not found"
     s = s.replace(anchor, insert, 1)
 p.write_text(s)
@@ -161,9 +161,9 @@ block = """#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 			susfs_is_current_non_root_user_app_proc())
 		{
 			seq_printf(m,
-				"Size:           %8lu kB\\n"
-				"KernelPageSize: %8lu kB\\n"
-				"MMUPageSize:    %8lu kB\\n",
+				"Size:           %8lu kB\n"
+				"KernelPageSize: %8lu kB\n"
+				"MMUPageSize:    %8lu kB\n",
 				(vma->vm_end - vma->vm_start) >> 10,
 				4, 4);
 			goto bypass_orig_flow;
@@ -174,9 +174,9 @@ if block in s:
     s = s.replace(block, "", 1)
 size_old = """	if (!rollup_mode)
 		seq_printf(m,
-			   "Size:           %8lu kB\\n"
-			   "KernelPageSize: %8lu kB\\n"
-			   "MMUPageSize:    %8lu kB\\n",
+			   "Size:           %8lu kB\n"
+			   "KernelPageSize: %8lu kB\n"
+			   "MMUPageSize:    %8lu kB\n",
 			   (vma->vm_end - vma->vm_start) >> 10,
 			   vma_kernel_pagesize(vma) >> 10,
 			   vma_mmu_pagesize(vma) >> 10);
@@ -187,16 +187,16 @@ size_new = """	if (!rollup_mode) {
 		    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
 		    susfs_is_current_non_root_user_app_proc()) {
 			seq_printf(m,
-				   "Size:           %8lu kB\\n"
-				   "KernelPageSize: %8lu kB\\n"
-				   "MMUPageSize:    %8lu kB\\n",
+				   "Size:           %8lu kB\n"
+				   "KernelPageSize: %8lu kB\n"
+				   "MMUPageSize:    %8lu kB\n",
 				   (vma->vm_end - vma->vm_start) >> 10, 4, 4);
 		} else
 #endif
 		seq_printf(m,
-			   "Size:           %8lu kB\\n"
-			   "KernelPageSize: %8lu kB\\n"
-			   "MMUPageSize:    %8lu kB\\n",
+			   "Size:           %8lu kB\n"
+			   "KernelPageSize: %8lu kB\n"
+			   "MMUPageSize:    %8lu kB\n",
 			   (vma->vm_end - vma->vm_start) >> 10,
 			   vma_kernel_pagesize(vma) >> 10,
 			   vma_mmu_pagesize(vma) >> 10);
@@ -218,7 +218,7 @@ flags_new = """	if (!rollup_mode) {
 		    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
 		    susfs_is_current_non_root_user_app_proc()) {
 			seq_puts(m, "VmFlags: mr mw me");
-			seq_putc(m, '\\n');
+			seq_putc(m, '\n');
 		} else
 #endif
 		{
