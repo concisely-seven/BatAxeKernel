@@ -52,7 +52,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash build.sh -m d1xks -v N971N-KSUN-SUSFS-1.5.12-MINIMAL -k y -l 13 -r y
+          # Keep LOCALVERSION below Linux's 64-character utsrelease limit.
+          bash build.sh -m d1xks -v N971N-KSUN-SUSFS-MIN -k y -l 13 -r y
 
       - name: Collect flashable ZIP for verification
         shell: bash
@@ -66,7 +67,7 @@ jobs:
             esac
           done < <(find . -type f -name '*.zip' -not -path './.git/*' -not -path './toolchain/*' -print0)
           echo "[PACKAGE] Collected ZIPs:"
-          find build/export -maxdepth 1 -type f -name '*.zip' -printf '%p %s bytes\n'
+          find build/export -maxdepth 1 -type f -name '*.zip' -printf '%p %s bytes\\n'
 
       - name: Diagnose kernel configuration and package
         shell: bash
@@ -83,7 +84,7 @@ jobs:
           echo "=== SUSFS Kbuild wiring ==="
           grep -n 'susfs.o' fs/Makefile || true
           echo "=== Build exports ==="
-          find build/export -maxdepth 2 -type f -printf '%p %s bytes\n' 2>/dev/null || true
+          find build/export -maxdepth 2 -type f -printf '%p %s bytes\\n' 2>/dev/null || true
           echo "=== ZIP integrity and installer checks ==="
           for z in build/export/*.zip build/out/d1xks/*.zip; do
             test -f "$z" || continue
@@ -99,8 +100,6 @@ jobs:
         run: |
           set -euxo pipefail
           test -s out/.config
-          # build.sh moves Image into AIK and packages the resulting boot.img;
-          # verify the final boot image in the ZIP instead of the moved-away path.
           test -s out/fs/susfs.o
           grep -q '^CONFIG_KSU=y$' out/.config
           grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
