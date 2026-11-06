@@ -52,6 +52,20 @@ jobs:
           set -euo pipefail
           bash build.sh -m d1xks -v N971N-KSUN-SUSFS-1.5.12 -k y -l 13 -r y
 
+      - name: Collect flashable ZIP for verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/export
+          while IFS= read -r -d '' z; do
+            case "$z" in
+              ./build/export/*.zip) ;;
+              *) echo "[PACKAGE] Collecting $z"; cp -f "$z" build/export/ ;;
+            esac
+          done < <(find . -type f -name '*.zip' -not -path './.git/*' -not -path './toolchain/*' -print0)
+          echo "[PACKAGE] Collected ZIPs:"
+          find build/export -maxdepth 1 -type f -name '*.zip' -printf '%p %s bytes\n'
+
       - name: Diagnose kernel configuration and package
         shell: bash
         run: |
