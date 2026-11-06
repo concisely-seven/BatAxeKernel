@@ -47,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x apply-susfs.sh build.sh
-          bash apply-susfs.sh
+          SKIP_KSUN_PATCH=1 bash apply-susfs.sh
 
       - name: Build N971N d1xks kernel and flashable ZIP
         shell: bash
