@@ -433,7 +433,7 @@ setup_clang_environment() {
 
 kernelsu() {
     separator
-    local expected="88e37d606fc12758421c3e36b0f61499610cfe8d"
+    local expected="d4b7ffbbe19d6bffcafad9962439427727b74b05"
 
     quotes "Initialize the exact pinned KernelSU Next source"
     git submodule update --init --recursive KernelSU
