@@ -471,7 +471,7 @@ kernelsu() {
     }
 
     # Apply the pinned SUSFS 1.5.12 kernel + KernelSU patches.
-    bash ./apply-susfs.sh
+    bash ./apply-susfs.sh || abort
 }
 
 # =============================================================================
