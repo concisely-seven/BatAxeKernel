@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C KernelSU rev-parse HEAD)" = "88e37d606fc12758421c3e36b0f61499610cfe8d"
+          test "$(git -C KernelSU rev-parse HEAD)" = "d4b7ffbbe19d6bffcafad9962439427727b74b05"
           echo "Pinned KernelSU source verified."
 
       - name: Install build dependencies
