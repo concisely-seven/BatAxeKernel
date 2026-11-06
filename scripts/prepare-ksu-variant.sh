@@ -51,8 +51,18 @@ git -C "$SRC" checkout --detach -q FETCH_HEAD
 KSU_SHA="$(git -C "$SRC" rev-parse HEAD)"
 KSU_GIT_VERSION="$(git -C "$SRC" rev-list --count HEAD)"
 KSU_VERSION=""
+KSU_VERSION_SCHEME=""
 if [[ "$VARIANT" == "ksun" ]]; then
-  KSU_VERSION="$((10000 + KSU_GIT_VERSION + 200))"
+  if grep -q 'expr 10000 + $(KSU_GIT_VERSION) + 200' "$SRC/kernel/Makefile"; then
+    KSU_VERSION_SCHEME="10000+git_count+200"
+    KSU_VERSION="$((10000 + KSU_GIT_VERSION + 200))"
+  elif grep -q 'expr 30000 + $(KSU_GIT_VERSION)' "$SRC/kernel/Makefile"; then
+    KSU_VERSION_SCHEME="30000+git_count"
+    KSU_VERSION="$((30000 + KSU_GIT_VERSION))"
+  else
+    echo "Unknown KernelSU-Next version formula in $SRC/kernel/Makefile" >&2
+    exit 6
+  fi
 fi
 
 if [[ ! -f "$SRC/kernel/Kconfig" || ! -f "$SRC/kernel/Makefile" ]]; then
@@ -97,6 +107,7 @@ mkdir -p build
   echo "commit=$KSU_SHA"
   echo "git_version_count=$KSU_GIT_VERSION"
   if [[ -n "$KSU_VERSION" ]]; then
+    echo "ksu_version_scheme=$KSU_VERSION_SCHEME"
     echo "ksu_version=$KSU_VERSION"
   fi
   echo "susfs=$SUSFS"
