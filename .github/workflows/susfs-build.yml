@@ -1,10 +1,10 @@
-name: N971N KernelSU Next + SUSFS 1.5.12
-run-name: "N971N d1xks KSUN + SUSFS v1.5.12"
+name: N971N GoRhanHee KernelSU-Next baseline + SUSFS 1.5.12
+run-name: "N971N d1xks GoRhanHee KSUN pinned baseline + SUSFS 1.5.12"
 
 on:
   push:
     branches:
-      - kernelsu-next-susfs-1.5.12
+      - ksun-gorhanhee-susfs-1.5.12-test
   workflow_dispatch:
 
 permissions:
@@ -29,17 +29,20 @@ jobs:
             python3 python-is-python3 zip curl cpio rsync device-tree-compiler \
             git lz4 zlib1g-dev
 
-      - name: Prepare official KernelSU-Next legacy driver
+      - name: Prepare GoRhanHee KernelSU-Next pinned baseline
         shell: bash
         run: |
           set -euo pipefail
           chmod +x scripts/prepare-ksu-variant.sh
-          bash scripts/prepare-ksu-variant.sh ksun legacy
-          grep -q 'KernelSU-Next/KernelSU-Next.git' build/ksu-source-info.txt
+          bash scripts/prepare-ksu-variant.sh ksun
+          grep -q 'repo=https://github.com/GoRhanHee/KernelSU-Next.git' build/ksu-source-info.txt
+          grep -q 'commit=9a1a643788f7927c7ccdeeaa51e0d19d0ee1c4e2' build/ksu-source-info.txt
+          grep -Eq '^git_version_count=[1-9][0-9]*$' build/ksu-source-info.txt
+          grep -Eq '^ksu_version=([1-9][0-9]*)$' build/ksu-source-info.txt
           test -L drivers/kernelsu
           test "$(readlink drivers/kernelsu)" = "../ksu-src/ksun/kernel"
 
-      - name: Apply SUSFS v1.5.12 for Linux 4.14.113 + KernelSU-Next
+      - name: Apply SUSFS v1.5.12 for Linux 4.14.113 + GoRhanHee KSUN
         shell: bash
         run: |
           set -euo pipefail
@@ -50,7 +53,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash build.sh -m d1xks -v N971N-KSUN-SUSFS-1.5.12 -k y -l 13 -r y
+          bash build.sh -m d1xks -v N971N-GoRhanHee-KSUN-SUSFS-1.5.12 -k y -l 13 -r y
 
       - name: Verify kernel configuration and package
         shell: bash
@@ -66,13 +69,15 @@ jobs:
           test "$ZIP_COUNT" -ge 1
           cp build/ksu-source-info.txt build/export/
           (cd build/export && sha256sum *.zip > SHA256SUMS)
-          echo "KernelSU Next + SUSFS config verified:"
+          echo "KernelSU-Next source/version:"
+          cat build/ksu-source-info.txt
+          echo "KernelSU/SUSFS config:"
           grep -E '^CONFIG_KSU(=|_)' out/.config
 
       - name: Upload kernel ZIP and build metadata
         uses: actions/upload-artifact@v4
         with:
-          name: N971N-KSUN-SUSFS-1.5.12-${{ github.run_number }}
+          name: N971N-GoRhanHee-KSUN-SUSFS-1.5.12-${{ github.run_number }}
           path: |
             build/export/*.zip
             build/export/ksu-source-info.txt
