@@ -83,8 +83,7 @@ submodule() {
     separator
     quotes "Fetch all Submodules Update"
 
-    git submodule init && git submodule update --remote
-    git submodule update -f -q --init --recursive > /dev/null
+    git submodule init && git submodule update -f -q --init --recursive > /dev/null
     check "Submodules"
 }
 
