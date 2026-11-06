@@ -31,6 +31,11 @@ else
   curl -fL --retry 3 "$SUSFS_FILES_BASE/include/linux/susfs.h" -o "$ROOT/include/linux/susfs.h"
   curl -fL --retry 3 "$SUSFS_FILES_BASE/include/linux/susfs_def.h" -o "$ROOT/include/linux/susfs_def.h"
 
+  # Linux 4.14.113 does not provide <linux/bits.h>; its BIT()/GENMASK()
+  # definitions are provided by <linux/bitops.h>. Keep SUSFS 1.5.12
+  # definitions intact while using the 4.14-compatible header.
+  sed -i 's|#include <linux/bits.h>|#include <linux/bitops.h>|' "$ROOT/include/linux/susfs_def.h"
+
   # This backport is close to Exynos 4.14.113 but three contexts differ
   # in Samsung's namespace/cmdline/task_mmu files. Apply the matching hunks,
   # then port those three sites explicitly below.
