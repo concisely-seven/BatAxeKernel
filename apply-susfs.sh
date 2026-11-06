@@ -128,6 +128,14 @@ bypass_orig_flow:
 }""", 1)
 p.write_text(s)
 
+# fdinfo.c: the 4.14 inotify callback uses a C89 declaration after a label;
+# make the label target an empty statement and avoid a newer helper unavailable here.
+p = root / "fs/notify/fdinfo.c"
+s = p.read_text()
+s = s.replace("out_seq_printf:\\n#endif", "out_seq_printf:\\n\\t;\\n#endif")
+s = s.replace("inotify_mark_user_mask(mark)", "(mark->mask & IN_ALL_EVENTS)")
+p.write_text(s)
+
 # cmdline.c: preserve Samsung's new_command_line path and call SUSFS before it.
 p = root / "fs/proc/cmdline.c"
 s = p.read_text()
