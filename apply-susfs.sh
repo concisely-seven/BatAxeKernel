@@ -147,8 +147,8 @@ PY
   rm -f "$ROOT"/fs/*.rej "$ROOT"/fs/proc/*.rej "$ROOT"/fs/*.orig "$ROOT"/fs/proc/*.orig
 fi
 
-# GoRhanHee's pinned revision already carries the SUSFS bridge in its
-# KSU sources. Do not apply the generic bridge patch a second time.
+# GoRhanHee's pinned and legacy-susfs revisions already carry the SUSFS
+# bridge. Avoid applying the same bridge patch twice.
 if grep -q '^config KSU_SUSFS
 grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"
 grep -q '^config KSU_SUSFS$' "$KSU_DIR/kernel/Kconfig"
