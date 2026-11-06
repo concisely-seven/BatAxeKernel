@@ -26,12 +26,9 @@ curl -fL --retry 3 "$SUSFS_BASE/include/linux/susfs.h" -o "$ROOT/include/linux/s
 curl -fL --retry 3 "$SUSFS_BASE/include/linux/susfs_def.h" -o "$ROOT/include/linux/susfs_def.h"
 grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"
 
-if grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h" 2>/dev/null; then
+if grep -q 'obj-$(CONFIG_KSU_SUSFS) += susfs.o' "$ROOT/fs/Makefile" && grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"; then
   echo "[SUSFS] Kernel layer already patched"
 else
-  if test -e "$ROOT/fs/susfs.c" || test -e "$ROOT/include/linux/susfs.h"; then
-    echo "[SUSFS][ERROR] SUSFS files exist but version is not v1.5.12"; exit 1
-  fi
 
   # This backport is close to Exynos 4.14.113 but three contexts differ
   # in Samsung's namespace/cmdline/task_mmu files. Apply the matching hunks,
