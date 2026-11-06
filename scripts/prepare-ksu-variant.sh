@@ -38,6 +38,12 @@ case "$VARIANT" in
     ;;
 esac
 
+# GoRhanHee's newer legacy-susfs branch uses KSU_KPROBES_HOOK, not the
+# older KSU_MANUAL_HOOK option. Keep the matching config isolated.
+if [[ "$VARIANT" == "ksun" && "$REF" == "legacy-susfs" ]]; then
+  CONFIG="ci/ksu-configs/ksu-ksun-gorhanhee-legacy-susfs.config"
+fi
+
 rm -rf "$SRC"
 mkdir -p "$SRC"
 git -C "$SRC" init -q
