@@ -52,6 +52,30 @@ jobs:
           set -euo pipefail
           bash build.sh -m d1xks -v N971N-KSUN-SUSFS-1.5.12 -k y -l 13 -r y
 
+      - name: Diagnose kernel configuration and package
+        shell: bash
+        run: |
+          set -u
+          echo "=== KernelSU/SUSFS symbols in final .config ==="
+          if test -s out/.config; then
+            grep -nE '^(CONFIG_KSU|CONFIG_KSU_|# CONFIG_KSU|CONFIG_OVERLAY_FS|CONFIG_IKCONFIG)' out/.config || true
+          else
+            echo "ERROR: out/.config missing or empty"
+          fi
+          echo "=== KernelSU source integration ==="
+          grep -nE 'config KSU|config KSU_SUSFS|KSU_MANUAL_HOOK|KSU_SUSFS' ksu-src/ksun/kernel/Kconfig | head -100 || true
+          echo "=== SUSFS Kbuild wiring ==="
+          grep -n 'susfs.o' fs/Makefile || true
+          echo "=== Build exports ==="
+          find build/export -maxdepth 2 -type f -printf '%p %s bytes\n' 2>/dev/null || true
+          echo "=== ZIP integrity and installer checks ==="
+          for z in build/export/*.zip build/out/d1xks/*.zip; do
+            test -f "$z" || continue
+            echo "--- $z"
+            unzip -t "$z" | tail -3 || true
+            unzip -p "$z" META-INF/com/google/android/updater-script 2>/dev/null | grep -nE 'N971|d1xks|binary|boot' | head -40 || true
+          done
+
       - name: Verify kernel configuration and package
         shell: bash
         run: |
@@ -64,6 +88,7 @@ jobs:
           test -d build/export
           ZIP_COUNT=$(find build/export -maxdepth 1 -type f -name '*.zip' | wc -l)
           test "$ZIP_COUNT" -ge 1
+          for z in build/export/*.zip; do unzip -t "$z" >/dev/null; done
           cp build/ksu-source-info.txt build/export/
           (cd build/export && sha256sum *.zip > SHA256SUMS)
           echo "KernelSU Next + SUSFS config verified:"
