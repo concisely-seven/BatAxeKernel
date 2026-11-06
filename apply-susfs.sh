@@ -23,7 +23,7 @@ python3 - "$TMP_DIR/susfs-kernel.patch" <<'PYFILTER'
 import pathlib, sys
 p = pathlib.Path(sys.argv[1])
 parts = p.read_text().split("diff --git ")
-kept = [x for x in parts if not x.startswith("a/security/selinux/avc.c ")]
+kept = [x for x in parts if not x.startswith("a/security/selinux/avc.c ") and not x.startswith("a/fs/notify/fdinfo.c ")]
 p.write_text("".join("diff --git " + x for x in kept))
 PYFILTER
 
@@ -130,10 +130,11 @@ insert = """\trc = security_sid_to_context(tsid, &scontext, &scontext_len);\n#if
 if "goto bypass_orig_flow;" not in s:
     assert needle in s, "avc.c target SID conversion anchor not found"
     s = s.replace(needle, insert, 1)
-label = """\tBUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));"""
+# Place the label inside avc_dump_query(), not avc_dump_av().
 if "bypass_orig_flow:" not in s:
-    assert label in s, "avc.c tclass validation anchor not found"
-    s = s.replace(label, "#ifdef CONFIG_KSU_SUSFS\nbypass_orig_flow:\n#endif\n" + label, 1)
+    fn = s.index("static void avc_dump_query(")
+    pos = s.index("\\tBUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));", fn)
+    s = s[:pos] + "#ifdef CONFIG_KSU_SUSFS\\nbypass_orig_flow:\\n#endif\\n" + s[pos:]
 p.write_text(s)
 
 # cmdline.c: preserve Samsung's new_command_line path and call SUSFS before it.
