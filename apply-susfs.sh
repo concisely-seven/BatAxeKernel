@@ -238,8 +238,8 @@ PY
 fi
 
 # Apply the matching KernelSU-Next bridge; never substitute the RKSU tree.
-git -C "$KSU_DIR" apply --check "$TMP_DIR/susfs-ksun.patch"
-git -C "$KSU_DIR" apply "$TMP_DIR/susfs-ksun.patch"
+git -C "$KSU_DIR" apply --recount --check "$TMP_DIR/susfs-ksun.patch"
+git -C "$KSU_DIR" apply --recount "$TMP_DIR/susfs-ksun.patch"
 
 grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"
 grep -q '^config KSU_SUSFS$' "$KSU_DIR/kernel/Kconfig"
