@@ -134,15 +134,16 @@ p = root / "fs/notify/fdinfo.c"
 s = p.read_text()
 s = s.replace("out_seq_printf:\\n#endif", "out_seq_printf:\\n\\t;\\n#endif")
 s = s.replace("inotify_mark_user_mask(mark)", "(mark->mask & IN_ALL_EVENTS)")
-# The SUSFS backport adds this declaration after a label. Hoist it to the
-# callback scope (the patched tree uses the three-argument callback signature).
-# Match the callback signature structurally: whitespace and parameter spelling
-# vary across the Samsung 4.14 tree/backport, so a literal replacement can miss.
-import re
-pattern = r"(static\s+void\s+inotify_fdinfo\s*\([^)]*\)\s*\{)"
-s, count = re.subn(pattern, r"\1\n\tu32 mask;", s, count=1)
-if count != 1:
-    raise SystemExit("Could not locate inotify_fdinfo() to declare SUSFS mask")
+# Hoist the mask declaration into the callback scope. Locate the function and
+# its opening brace explicitly; this Samsung 4.14 callback has two parameters.
+fn = s.find("inotify_fdinfo(")
+if fn < 0:
+    raise SystemExit("Could not locate inotify_fdinfo()")
+brace = s.find("{", fn)
+if brace < 0:
+    raise SystemExit("Could not locate inotify_fdinfo() body")
+if "u32 mask;" not in s[brace:brace + 80]:
+    s = s[:brace + 1] + "\\n\\tu32 mask;" + s[brace + 1:]
 s = s.replace("u32 mask = mark->mask & IN_ALL_EVENTS;", "mask = mark->mask & IN_ALL_EVENTS;")
 p.write_text(s)
 
