@@ -434,15 +434,41 @@ setup_clang_environment() {
 
 kernelsu() {
     separator
+    local expected="88e37d606fc12758421c3e36b0f61499610cfe8d"
 
-    # Setup KernelSU Next
-    if ! test -d "drivers/kernelsu"; then
-        quotes "Initialize the pinned KernelSU submodule (never update to remote HEAD)"
-        separator
-        git submodule update --init --recursive KernelSU
-    fi
+    quotes "Initialize the exact pinned KernelSU Next source"
+    git submodule update --init --recursive KernelSU
+    test -f KernelSU/kernel/setup.sh || {
+        echo "[KSU][FATAL] KernelSU setup.sh is missing"
+        exit 1
+    }
 
-    # Apply SUSFS 1.5.12 while preserving the exact KernelSU submodule commit
+    # The upstream setup script creates drivers/kernelsu and wires Kconfig/Makefile.
+    bash KernelSU/kernel/setup.sh "$expected"
+    local actual
+    actual="$(git -C KernelSU rev-parse HEAD)"
+    test "$actual" = "$expected" || {
+        echo "[KSU][FATAL] Expected KernelSU $expected, got $actual"
+        exit 1
+    }
+    test -L drivers/kernelsu || {
+        echo "[KSU][FATAL] drivers/kernelsu is not a symlink"
+        exit 1
+    }
+    test -f drivers/kernelsu/Kconfig || {
+        echo "[KSU][FATAL] drivers/kernelsu/Kconfig is missing"
+        exit 1
+    }
+    grep -Fq 'obj-$(CONFIG_KSU) += kernelsu/' drivers/Makefile || {
+        echo "[KSU][FATAL] drivers/Makefile is not wired for CONFIG_KSU"
+        exit 1
+    }
+    grep -Fq 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || {
+        echo "[KSU][FATAL] drivers/Kconfig is not wired for KernelSU"
+        exit 1
+    }
+
+    # Apply the pinned SUSFS 1.5.12 kernel + KernelSU patches.
     bash ./apply-susfs.sh
 }
 
@@ -467,23 +493,54 @@ kernel() {
         noquotes "KernelSU Next with SuSFS: Include (Using $KSU_NEXT)"
     fi
 
-    # Update kernel configuration
+    # Update kernel localversion without changing device boot metadata.
     update_kernel_config
 
-    DEFCONFIG="$KERNEL_DEFCONFIG bataxe.config $KSU_NEXT"
-
     separator
-    noquotes "Building Kernel Using $KERNEL_DEFCONFIG"
+    noquotes "Merging device, BatAxeKernel and KernelSU/SUSFS configs"
     quotes "Generating Configuration Files"
     separator
 
-    make -j$(nproc --all) $ARGS $DEFCONFIG || abort
+    test -x scripts/kconfig/merge_config.sh || {
+        echo "[CONFIG][FATAL] scripts/kconfig/merge_config.sh is missing"
+        abort
+    }
+    test -f "arch/arm64/configs/$KERNEL_DEFCONFIG" || abort
+    test -f arch/arm64/configs/bataxe.config || abort
+    test -f "arch/arm64/configs/$KSU_NEXT" || abort
+
+    ARCH=arm64 scripts/kconfig/merge_config.sh -m -O out \
+        "arch/arm64/configs/$KERNEL_DEFCONFIG" \
+        arch/arm64/configs/bataxe.config \
+        "arch/arm64/configs/$KSU_NEXT" || abort
+
+    make -j$(nproc --all) $ARGS olddefconfig || abort
+
+    # Fail the build immediately if KSU/SUSFS options were dropped or unmet.
+    for required in CONFIG_KSU=y CONFIG_KSU_MANUAL_HOOK=y CONFIG_KSU_SUSFS=y \
+        CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y CONFIG_KSU_SUSFS_SUS_PATH=y \
+        CONFIG_KSU_SUSFS_SUS_MOUNT=y CONFIG_KSU_SUSFS_SUS_MAP=y \
+        CONFIG_OVERLAY_FS=y; do
+        if ! grep -qx "$required" out/.config; then
+            echo "[CONFIG][FATAL] Required option missing from out/.config: $required"
+            grep -E '^(CONFIG_(KSU|OVERLAY_FS)|# CONFIG_(KSU|OVERLAY_FS))' out/.config || true
+            abort
+        fi
+    done
+    echo "[CONFIG] KSU Next + SUSFS 1.5.12 options verified in out/.config"
+    grep -E '^CONFIG_(KSU|OVERLAY_FS)' out/.config
 
     separator
     quotes "Building Kernel"
     separator
 
     make -j$(nproc --all) $ARGS || abort
+
+    test -s out/vmlinux || {
+        echo "[BUILD][FATAL] out/vmlinux was not generated"
+        abort
+    }
+    echo "[BUILD] vmlinux generated successfully"
 
     separator
     quotes "Finished Kernel Build!"
