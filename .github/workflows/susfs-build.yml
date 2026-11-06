@@ -48,6 +48,18 @@ jobs:
           chmod +x apply-susfs.sh build.sh
           bash apply-susfs.sh
 
+      - name: Isolate SUSFS initialization for boot test
+        shell: bash
+        run: |
+          set -euo pipefail
+          INIT_FILE="ksu-src/ksun/kernel/core/init.c"
+          test -s "$INIT_FILE"
+          COUNT=$(grep -c 'susfs_init();' "$INIT_FILE" || true)
+          test "$COUNT" -eq 1
+          sed -i '/susfs_init();/d' "$INIT_FILE"
+          ! grep -q 'susfs_init();' "$INIT_FILE"
+          echo "[ISOLATION] SUSFS code remains compiled, but its init hook is disabled for this boot-only diagnostic."
+
       - name: Build N971N d1xks kernel and flashable ZIP
         shell: bash
         run: |
