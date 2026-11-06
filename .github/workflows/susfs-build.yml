@@ -61,7 +61,7 @@ jobs:
           set -euo pipefail
           test -s out/.config
           grep -q '^CONFIG_KSU=y$' out/.config
-          grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
+          grep -q '^CONFIG_KSU_KPROBES_HOOK=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
           grep -q 'SUSFS_VERSION "v1.5.12"' include/linux/susfs.h
           test -d build/export
