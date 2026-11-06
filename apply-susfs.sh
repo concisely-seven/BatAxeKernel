@@ -56,7 +56,7 @@ if "#include <linux/susfs.h>" not in s:
     candidates = ("#include <linux/fslog.h>", "#include <linux/sched/task.h>", "#include <linux/idr.h>")
     idx = next((i for i, line in enumerate(lines) if any(line.startswith(x) for x in candidates)), None)
     assert idx is not None, "namespace.c: no stable Linux include anchor found"
-    lines.insert(idx + 1, "#include <linux/susfs.h>\\n")
+    lines.insert(idx + 1, "#include <linux/susfs.h>\n")
     s = "".join(lines)
 
 if "static DEFINE_IDA(susfs_mnt_id_ida);" not in s:
