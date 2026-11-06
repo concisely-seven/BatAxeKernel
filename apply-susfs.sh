@@ -143,7 +143,7 @@ brace = s.find("{", fn)
 if brace < 0:
     raise SystemExit("Could not locate inotify_fdinfo() body")
 if "u32 mask;" not in s[brace:brace + 80]:
-    s = s[:brace + 1] + "\\n\\tu32 mask;" + s[brace + 1:]
+    s = s[:brace + 1] + "\n\tu32 mask;" + s[brace + 1:]
 s = s.replace("u32 mask = mark->mask & IN_ALL_EVENTS;", "mask = mark->mask & IN_ALL_EVENTS;")
 p.write_text(s)
 
