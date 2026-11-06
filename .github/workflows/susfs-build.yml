@@ -98,10 +98,11 @@ jobs:
           test -s out/.config
           test -s out/arch/arm64/boot/Image
           test -s out/fs/susfs.o
-          grep -q '^CONFIG_KSU=y
+          grep -q '^CONFIG_KSU=y$' out/.config
           grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
           grep -q 'SUSFS_VERSION "v1.5.12"' include/linux/susfs.h
+          test -s build/ksu-source-info.txt
           test -d build/export
           ZIP_COUNT=$(find build/export -maxdepth 1 -type f -name '*.zip' | wc -l)
           test "$ZIP_COUNT" -ge 1
@@ -112,7 +113,6 @@ jobs:
             unzip -Z1 "$z" | grep -qx 'dtbo.img'
             unzip -Z1 "$z" | grep -qx 'META-INF/com/google/android/updater-script'
           done
-          cp build/ksu-source-info.txt build/export/
           (cd build/export && sha256sum *.zip > SHA256SUMS)
           echo "KernelSU Next + SUSFS config verified:"
           grep -E '^CONFIG_KSU(=|_)' out/.config
