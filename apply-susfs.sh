@@ -155,9 +155,9 @@ p.write_text(s)
 p = root / "fs/proc/task_mmu.c"
 s = p.read_text()
 if "#include <linux/susfs.h>" not in s:
-    anchor = "#include <linux/freezer.h>\\n"
+    anchor = "#include <linux/freezer.h>\n"
     assert anchor in s, "task_mmu.c include anchor not found"
-    s = s.replace(anchor, anchor + "#include <linux/susfs.h>\\n", 1)
+    s = s.replace(anchor, anchor + "#include <linux/susfs.h>\n", 1)
 p.write_text(s)
 
 # Remove the upstream backport's first SUS_MAP block; replace the Samsung
@@ -181,34 +181,34 @@ if block in s:
     s = s.replace(block, "", 1)
 # Locate the complete Samsung Size block by its semantic markers, not
 # whitespace-sensitive copied source text. This is the original 4.14 show_smap block.
-size_start = s.find("\\tif (!rollup_mode)\\n\\t\\tseq_printf(m,")
+size_start = s.find("\tif (!rollup_mode)\n\t\tseq_printf(m,")
 if size_start < 0 or '"Size:' not in s[size_start:size_start + 500]:
     raise SystemExit("task_mmu.c Samsung show_smap Size block not found")
-size_end_marker = "\\t\\t\\t   vma_mmu_pagesize(vma) >> 10);"
+size_end_marker = "\t\t\t   vma_mmu_pagesize(vma) >> 10);"
 size_end = s.find(size_end_marker, size_start)
 if size_end < 0:
     raise SystemExit("task_mmu.c Samsung Size block terminator not found")
 size_end += len(size_end_marker)
-size_new = """\\tif (!rollup_mode) {
+size_new = """\tif (!rollup_mode) {
 #ifdef CONFIG_KSU_SUSFS_SUS_MAP
-\\t\\tif (vma->vm_file &&
-\\t\\t    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
-\\t\\t    susfs_is_current_non_root_user_app_proc()) {
-\\t\\t\\tseq_printf(m,
-\\t\\t\\t\\t   \\"Size:           %8lu kB\\\\n\\"
-\\t\\t\\t\\t   \\"KernelPageSize: %8lu kB\\\\n\\"
-\\t\\t\\t\\t   \\"MMUPageSize:    %8lu kB\\\\n\\",
-\\t\\t\\t\\t   (vma->vm_end - vma->vm_start) >> 10, 4, 4);
-\\t\\t} else
+\t\tif (vma->vm_file &&
+\t\t    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
+\t\t    susfs_is_current_non_root_user_app_proc()) {
+\t\t\tseq_printf(m,
+\t\t\t\t   \"Size:           %8lu kB\\n\"
+\t\t\t\t   \"KernelPageSize: %8lu kB\\n\"
+\t\t\t\t   \"MMUPageSize:    %8lu kB\\n\",
+\t\t\t\t   (vma->vm_end - vma->vm_start) >> 10, 4, 4);
+\t\t} else
 #endif
-\\t\\tseq_printf(m,
-\\t\\t\\t   \\"Size:           %8lu kB\\\\n\\"
-\\t\\t\\t   \\"KernelPageSize: %8lu kB\\\\n\\"
-\\t\\t\\t   \\"MMUPageSize:    %8lu kB\\\\n\\",
-\\t\\t\\t   (vma->vm_end - vma->vm_start) >> 10,
-\\t\\t\\t   vma_kernel_pagesize(vma) >> 10,
-\\t\\t\\t   vma_mmu_pagesize(vma) >> 10);
-\\t}
+\t\tseq_printf(m,
+\t\t\t   \"Size:           %8lu kB\\n\"
+\t\t\t   \"KernelPageSize: %8lu kB\\n\"
+\t\t\t   \"MMUPageSize:    %8lu kB\\n\",
+\t\t\t   (vma->vm_end - vma->vm_start) >> 10,
+\t\t\t   vma_kernel_pagesize(vma) >> 10,
+\t\t\t   vma_mmu_pagesize(vma) >> 10);
+\t}
 """
 s = s[:size_start] + size_new + s[size_end:]
 
