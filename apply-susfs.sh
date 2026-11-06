@@ -7,7 +7,7 @@ TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 KERNEL_PATCH_URL="https://raw.githubusercontent.com/F640/begonia-ckernel-mod/fe1fe1491b2f71ee62be64eb9525c92f63fde938/patches/susfs-backport/thesillyok-susfs-1.5.12/thesillyok-susfs-1.5.12-mod.patch"
-KSUN_PATCH_URL="https://raw.githubusercontent.com/caniscript/BatAxeKernel/test-ksun-susfs-bridge/patches/ksun-susfs-bridge.patch"
+KSUN_PATCH_URL="https://raw.githubusercontent.com/concisely-seven/BatAxeKernel/test-ksun-susfs-bridge/patches/ksun-susfs-bridge.patch"
 
 test -d "$ROOT/fs"
 test -f "$KSU_DIR/kernel/Kconfig"
