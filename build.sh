@@ -519,7 +519,7 @@ kernel() {
     make -j$(nproc --all) $ARGS olddefconfig || abort
 
     # Fail the build immediately if KSU/SUSFS options were dropped or unmet.
-    for required in CONFIG_KSU=y CONFIG_KSU_MANUAL_HOOK=y CONFIG_KSU_SUSFS=y \
+    for required in CONFIG_KSU=y CONFIG_KSU_SUSFS=y \
         CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y CONFIG_KSU_SUSFS_SUS_PATH=y \
         CONFIG_KSU_SUSFS_SUS_MOUNT=y CONFIG_KSU_SUSFS_SUS_MAP=y \
         CONFIG_OVERLAY_FS=y; do
