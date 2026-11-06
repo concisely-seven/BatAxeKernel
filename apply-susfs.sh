@@ -259,6 +259,118 @@ fi
 git -C "$KSU_DIR" apply --recount --check "$TMP_DIR/susfs-ksun.patch"
 git -C "$KSU_DIR" apply --recount "$TMP_DIR/susfs-ksun.patch"
 
+# Bridge SUSFS v1.5.12's SELinux and umount hooks to the actual KSUN legacy APIs.
+python3 - "$KSU_DIR" <<'PY'
+import pathlib, sys
+ksu = pathlib.Path(sys.argv[1])
+
+# KernelSU-Next names these SELinux predicates differently. Export SUSFS-facing
+# wrappers and publish the SID values used by the 4.14 AVC spoofing hook.
+p = ksu / "kernel/selinux/selinux.c"
+s = p.read_text()
+if "u32 susfs_ksu_sid" not in s:
+    anchor = "u32 ksu_file_sid __read_mostly = 0;"
+    if anchor not in s:
+        raise SystemExit("KSUN selinux.c: ksu_file_sid anchor missing")
+    s = s.replace(anchor, anchor + "\nu32 susfs_ksu_sid __read_mostly = 0;\nu32 susfs_kernel_sid __read_mostly = 0;", 1)
+
+if "susfs_ksu_sid = cached_su_sid;" not in s:
+    anchor = """    } else {
+        pr_info("Cached su SID: %u\\n", cached_su_sid);
+    }
+"""
+    insert = anchor + """
+#ifdef CONFIG_KSU_SUSFS
+    susfs_ksu_sid = cached_su_sid;
+    err = security_secctx_to_secid("u:r:kernel:s0",
+                                   strlen("u:r:kernel:s0"),
+                                   &susfs_kernel_sid);
+    if (err) {
+        pr_warn("Failed to cache SUSFS kernel SID: %d\\n", err);
+        susfs_kernel_sid = 0;
+    } else {
+        pr_info("Cached SUSFS kernel SID: %u\\n", susfs_kernel_sid);
+    }
+#endif
+"""
+    if anchor not in s:
+        raise SystemExit("KSUN selinux.c: cached su SID block anchor missing")
+    s = s.replace(anchor, insert, 1)
+
+if "bool susfs_is_current_ksu_domain(void)" not in s:
+    s += """
+#ifdef CONFIG_KSU_SUSFS
+bool susfs_is_current_ksu_domain(void)
+{
+    return is_ksu_domain();
+}
+
+bool susfs_is_current_zygote_domain(void)
+{
+    return is_zygote(current_cred());
+}
+#endif
+"""
+p.write_text(s)
+
+# SUSFS expects the four-argument helper used by its 1.5.12 backport. KSUN
+# has an equivalent private two-argument implementation; expose a wrapper
+# while retaining the original KSU task-work path.
+p = ksu / "kernel/feature/kernel_umount.c"
+s = p.read_text()
+if "static void ksu_try_umount(const char *mnt, int flags)" not in s:
+    anchor = "static void try_umount(const char *mnt, int flags)"
+    if anchor not in s:
+        raise SystemExit("KSUN kernel_umount.c: try_umount implementation anchor missing")
+    s = s.replace(anchor, "static void ksu_try_umount(const char *mnt, int flags)", 1)
+    s = s.replace("try_umount(entry->umountable, entry->flags);",
+                  "ksu_try_umount(entry->umountable, entry->flags);", 1)
+
+if "void try_umount(const char *mnt, bool check_mnt, int flags, uid_t uid)" not in s:
+    anchor = """static void ksu_try_umount(const char *mnt, int flags)
+{
+	struct path path;
+	int err = kern_path(mnt, 0, &path);
+	if (err) {
+		return;
+	}
+
+	if (path.dentry != path.mnt->mnt_root) {
+		// it is not root mountpoint, maybe umounted by others already.
+		path_put(&path);
+		return;
+	}
+    ksu_umount_mnt(mnt, &path, flags);
+}
+"""
+    wrapper = anchor + """
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+void try_umount(const char *mnt, bool check_mnt, int flags, uid_t uid)
+{
+	const struct cred *saved;
+
+	(void)check_mnt;
+	(void)uid;
+	if (!ksu_cred)
+		return;
+
+	saved = override_creds(ksu_cred);
+	ksu_try_umount(mnt, flags);
+	revert_creds(saved);
+}
+#endif
+"""
+    if anchor not in s:
+        raise SystemExit("KSUN kernel_umount.c: exact helper body anchor missing")
+    s = s.replace(anchor, wrapper, 1)
+p.write_text(s)
+PY
+
+grep -q 'bool susfs_is_current_ksu_domain(void)' "$KSU_DIR/kernel/selinux/selinux.c"
+grep -q 'bool susfs_is_current_zygote_domain(void)' "$KSU_DIR/kernel/selinux/selinux.c"
+grep -q 'u32 susfs_ksu_sid' "$KSU_DIR/kernel/selinux/selinux.c"
+grep -q 'void try_umount(const char \*mnt, bool check_mnt, int flags, uid_t uid)' "$KSU_DIR/kernel/feature/kernel_umount.c"
+
 grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"
 grep -q '^config KSU_SUSFS$' "$KSU_DIR/kernel/Kconfig"
 grep -q 'susfs_spoof_cmdline_or_bootconfig' "$ROOT/fs/proc/cmdline.c"
