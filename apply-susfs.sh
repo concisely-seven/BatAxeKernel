@@ -161,9 +161,9 @@ block = """#ifdef CONFIG_KSU_SUSFS_SUS_MAP
 			susfs_is_current_non_root_user_app_proc())
 		{
 			seq_printf(m,
-				"Size:           %8lu kB\n"
-				"KernelPageSize: %8lu kB\n"
-				"MMUPageSize:    %8lu kB\n",
+				"Size:           %8lu kB\\n"
+				"KernelPageSize: %8lu kB\\n"
+				"MMUPageSize:    %8lu kB\\n",
 				(vma->vm_end - vma->vm_start) >> 10,
 				4, 4);
 			goto bypass_orig_flow;
@@ -174,9 +174,9 @@ if block in s:
     s = s.replace(block, "", 1)
 size_old = """	if (!rollup_mode)
 		seq_printf(m,
-			   "Size:           %8lu kB\n"
-			   "KernelPageSize: %8lu kB\n"
-			   "MMUPageSize:    %8lu kB\n",
+			   "Size:           %8lu kB\\n"
+			   "KernelPageSize: %8lu kB\\n"
+			   "MMUPageSize:    %8lu kB\\n",
 			   (vma->vm_end - vma->vm_start) >> 10,
 			   vma_kernel_pagesize(vma) >> 10,
 			   vma_mmu_pagesize(vma) >> 10);
@@ -187,16 +187,16 @@ size_new = """	if (!rollup_mode) {
 		    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
 		    susfs_is_current_non_root_user_app_proc()) {
 			seq_printf(m,
-				   "Size:           %8lu kB\n"
-				   "KernelPageSize: %8lu kB\n"
-				   "MMUPageSize:    %8lu kB\n",
+				   "Size:           %8lu kB\\n"
+				   "KernelPageSize: %8lu kB\\n"
+				   "MMUPageSize:    %8lu kB\\n",
 				   (vma->vm_end - vma->vm_start) >> 10, 4, 4);
 		} else
 #endif
 		seq_printf(m,
-			   "Size:           %8lu kB\n"
-			   "KernelPageSize: %8lu kB\n"
-			   "MMUPageSize:    %8lu kB\n",
+			   "Size:           %8lu kB\\n"
+			   "KernelPageSize: %8lu kB\\n"
+			   "MMUPageSize:    %8lu kB\\n",
 			   (vma->vm_end - vma->vm_start) >> 10,
 			   vma_kernel_pagesize(vma) >> 10,
 			   vma_mmu_pagesize(vma) >> 10);
@@ -218,7 +218,7 @@ flags_new = """	if (!rollup_mode) {
 		    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
 		    susfs_is_current_non_root_user_app_proc()) {
 			seq_puts(m, "VmFlags: mr mw me");
-			seq_putc(m, '\n');
+			seq_putc(m, '\\n');
 		} else
 #endif
 		{
