@@ -8,7 +8,8 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 # This is the exact KernelSU submodule revision from the known-good kernelsu-next branch.
 EXPECTED_KSU_COMMIT="88e37d606fc12758421c3e36b0f61499610cfe8d"
-KERNEL_PATCH_URL="https://raw.githubusercontent.com/F640/begonia-ckernel-mod/fe1fe1491b2f71ee62be64eb9525c92f63fde938/patches/susfs-backport/thesillyok-susfs-1.5.12/thesillyok-susfs-1.5.12-mod.patch"
+SUSFS_SOURCE_BASE="https://raw.githubusercontent.com/F640/begonia-ckernel-mod/fe1fe1491b2f71ee62be64eb9525c92f63fde938/patches/susfs-backport/thesillyok-susfs-1.5.12"
+KERNEL_PATCH_URL="$SUSFS_SOURCE_BASE/thesillyok-susfs-1.5.12-mod.patch"
 KSU_PATCH_URL="https://raw.githubusercontent.com/TheSillyOk/kernel_ls_patches/7acc04583b63772baf8c1d88cbde778775895798/RKSU/RKSU-SUSFS-1.5.12.patch"
 
 test -d "$ROOT/fs"
@@ -33,6 +34,14 @@ else
   fi
   patch --batch --forward -p1 -F3 -d "$ROOT" < "$TMP_DIR/susfs-kernel-1.5.12.patch"
 fi
+
+# The Linux 4.14 backport patch wires SUSFS into VFS but intentionally
+# keeps the three SUSFS implementation/header files as separate source files.
+# Fetch them from the same immutable upstream revision before Kconfig checks.
+mkdir -p "$ROOT/include/linux"
+curl -fL --retry 3 "$SUSFS_SOURCE_BASE/include/linux/susfs.h" -o "$ROOT/include/linux/susfs.h"
+curl -fL --retry 3 "$SUSFS_SOURCE_BASE/include/linux/susfs_def.h" -o "$ROOT/include/linux/susfs_def.h"
+curl -fL --retry 3 "$SUSFS_SOURCE_BASE/fs/susfs.c" -o "$ROOT/fs/susfs.c"
 
 # Integrate SUSFS with the pinned KernelSU source, not a moving remote branch.
 if grep -q '^config KSU_SUSFS$' "$KSU_DIR/kernel/Kconfig"; then
