@@ -88,13 +88,15 @@ jobs:
             test -f "$z" || continue
             echo "--- $z"
             unzip -t "$z" | tail -3 || true
+            echo "[PACKAGE] ZIP entries:"
+            unzip -Z1 "$z" | sed -n "1,100p" || true
             unzip -p "$z" META-INF/com/google/android/updater-script 2>/dev/null | grep -nE 'N971|d1xks|binary|boot' | head -40 || true
           done
 
       - name: Verify kernel configuration and package
         shell: bash
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           test -s out/.config
           test -s out/arch/arm64/boot/Image
           test -s out/fs/susfs.o
