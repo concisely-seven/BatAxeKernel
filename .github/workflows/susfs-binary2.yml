@@ -4,7 +4,7 @@ run-name: "N971N Binary2 KSUN SUSFS 1.5.12 - Clang 13"
 on:
   push:
     branches:
-      - kernelsu-next-susfs-1.5.12-binary2
+      - ksun-legacy-susfs-1.5.12-binary2
   workflow_dispatch:
 
 permissions:
