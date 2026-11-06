@@ -47,23 +47,23 @@ else
 import pathlib, sys
 root = pathlib.Path(sys.argv[1])
 
-# namespace.c: Samsung adds fslog.h between sched/task.h and pnode.h.
+# namespace.c: Samsung's 4.14 tree has fslog.h; locate includes by lines,
+# and use a fallback include anchor if downstream changes remove that header.
 p = root / "fs/namespace.c"
 s = p.read_text()
-if "#include <linux/susfs_def.h>" not in s:
-    needle = "#include <linux/fslog.h>\n"
-    assert needle in s, "namespace.c Samsung fslog.h anchor not found"
-    s = s.replace(needle, needle + "#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_TRY_UMOUNT)\n#include <linux/susfs_def.h>\n#endif\n", 1)
-p.write_text(s)
+if "#include <linux/susfs.h>" not in s:
+    lines = s.splitlines(True)
+    candidates = ("#include <linux/fslog.h>", "#include <linux/sched/task.h>", "#include <linux/idr.h>")
+    idx = next((i for i, line in enumerate(lines) if any(line.startswith(x) for x in candidates)), None)
+    assert idx is not None, "namespace.c: no stable Linux include anchor found"
+    lines.insert(idx + 1, "#include <linux/susfs.h>\\n")
+    s = "".join(lines)
 
-# namespace.c: the generic hunk misses Samsung's fslog.h include context.
-p = root / "fs/namespace.c"
-s = p.read_text()
 if "static DEFINE_IDA(susfs_mnt_id_ida);" not in s:
-    anchor = "#include <linux/fslog.h>\\n"
-    assert anchor in s, "namespace.c fslog.h include anchor not found"
-    susfs_block = """#include <linux/susfs.h>
-#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT)
+    lines = s.splitlines(True)
+    idx = next((i for i, line in enumerate(lines) if line.startswith("#include <linux/susfs.h>")), None)
+    assert idx is not None, "namespace.c SUSFS include insertion failed"
+    block = """#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT)
 extern bool susfs_is_current_ksu_domain(void);
 extern bool susfs_is_current_zygote_domain(void);
 extern bool susfs_is_boot_completed_triggered;
@@ -84,7 +84,8 @@ bool susfs_is_auto_add_sus_bind_mount_enabled = true;
 bool susfs_is_auto_add_try_umount_for_bind_mount_enabled = true;
 #endif
 """
-    s = s.replace(anchor, anchor + susfs_block, 1)
+    lines.insert(idx + 1, block)
+    s = "".join(lines)
 p.write_text(s)
 
 # avc.c: the upstream hunk targets a newer avc_dump_query signature and
