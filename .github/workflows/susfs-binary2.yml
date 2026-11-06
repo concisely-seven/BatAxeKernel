@@ -43,6 +43,61 @@ jobs:
           chmod +x build.sh
           bash build.sh -m d1xks -v B2-KSUN-SFS512 -k y -l 13 -r y
 
+      - name: Verify KSU Next and SUSFS are enabled in the final kernel config
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s out/.config
+          test -s out/vmlinux
+          for option in \
+            CONFIG_KSU=y \
+            CONFIG_KSU_MANUAL_HOOK=y \
+            CONFIG_KSU_SUSFS=y \
+            CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y \
+            CONFIG_KSU_SUSFS_SUS_PATH=y \
+            CONFIG_KSU_SUSFS_SUS_MOUNT=y \
+            CONFIG_KSU_SUSFS_SUS_MAP=y \
+            CONFIG_OVERLAY_FS=y; do
+            grep -qx "$option" out/.config || {
+              echo "FATAL: missing final kernel config: $option"
+              exit 1
+            }
+          done
+          grep -q 'SUSFS_VERSION "v1.5.12"' include/linux/susfs.h
+          grep -q '^config KSU_SUSFS        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          zips=(build/export/*.zip)
+          test "${#zips[@]}" -eq 1
+          unzip -t "${zips[0]}"
+          unzip -p "${zips[0]}" META-INF/com/google/android/updater-script > /tmp/updater-script
+          if grep -Eiq 'Binary 7|Binaries Support: 7|Binary 8|Binary 9' /tmp/updater-script; then
+            echo "FATAL: updater script still contains Binary 7/8/9-only restriction"
+            exit 1
+          fi
+          grep -q 'N971N' /tmp/updater-script || true
+          echo "Flashable ZIP archive integrity verified."
+
+      - name: Upload flashable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: BatAxeKernel-d1xks-Binary2-KSUN-SUSFS-1.5.12-Clang13
+          path: build/export/*.zip
+          if-no-files-found: error
+          compression-level: 9
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BatAxeKernel-Binary2-SUSFS-1.5.12-build-log
+          path: build.log
+          if-no-files-found: ignore
+ KernelSU/kernel/Kconfig
+          grep -E '^CONFIG_(KSU|OVERLAY_FS)' out/.config
+          echo "Final .config confirms KernelSU Next + SUSFS v1.5.12."
+
       - name: Verify generated flashable ZIP
         shell: bash
         run: |
