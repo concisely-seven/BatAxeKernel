@@ -24,6 +24,13 @@ else
     echo "[SUSFS][ERROR] SUSFS files exist but version is not v1.5.12"; exit 1
   fi
 
+  # Import the exact v1.5.12 core files paired with the kernel patch.
+  # The patch modifies call sites; it does not create these three source files.
+  SUSFS_FILES_BASE="https://raw.githubusercontent.com/F640/begonia-ckernel-mod/fe1fe1491b2f71ee62be64eb9525c92f63fde938/patches/susfs-backport/thesillyok-susfs-1.5.12"
+  curl -fL --retry 3 "$SUSFS_FILES_BASE/fs/susfs.c" -o "$ROOT/fs/susfs.c"
+  curl -fL --retry 3 "$SUSFS_FILES_BASE/include/linux/susfs.h" -o "$ROOT/include/linux/susfs.h"
+  curl -fL --retry 3 "$SUSFS_FILES_BASE/include/linux/susfs_def.h" -o "$ROOT/include/linux/susfs_def.h"
+
   # This backport is close to Exynos 4.14.113 but three contexts differ
   # in Samsung's namespace/cmdline/task_mmu files. Apply the matching hunks,
   # then port those three sites explicitly below.
@@ -147,8 +154,7 @@ PY
   rm -f "$ROOT"/fs/*.rej "$ROOT"/fs/proc/*.rej "$ROOT"/fs/*.orig "$ROOT"/fs/proc/*.orig
 fi
 
-# The GoRhanHee KSUN refs used by our test branches already contain
-# the SUSFS bridge. Set SKIP_KSUN_PATCH=1 to avoid duplicate application.
+# GoRhanHee KSUN test refs already contain the SUSFS bridge.
 if [[ "${SKIP_KSUN_PATCH:-0}" != "1" ]]; then
   git -C "$KSU_DIR" apply --check "$TMP_DIR/susfs-ksun.patch"
   git -C "$KSU_DIR" apply "$TMP_DIR/susfs-ksun.patch"
