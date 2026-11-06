@@ -17,6 +17,15 @@ test "$(readlink "$ROOT/drivers/kernelsu")" = "../ksu-src/ksun/kernel"
 curl -fL --retry 3 "$KERNEL_PATCH_URL" -o "$TMP_DIR/susfs-kernel.patch"
 curl -fL --retry 3 "$KSUN_PATCH_URL" -o "$TMP_DIR/susfs-ksun.patch"
 
+# The backport diff only modifies existing kernel call sites; it does NOT
+# create the SUSFS implementation files. Fetch the matching v1.5.12 sources.
+SUSFS_BASE="https://raw.githubusercontent.com/F640/begonia-ckernel-mod/fe1fe1491b2f71ee62be64eb9525c92f63fde938/patches/susfs-backport/thesillyok-susfs-1.5.12"
+mkdir -p "$ROOT/include/linux"
+curl -fL --retry 3 "$SUSFS_BASE/fs/susfs.c" -o "$ROOT/fs/susfs.c"
+curl -fL --retry 3 "$SUSFS_BASE/include/linux/susfs.h" -o "$ROOT/include/linux/susfs.h"
+curl -fL --retry 3 "$SUSFS_BASE/include/linux/susfs_def.h" -o "$ROOT/include/linux/susfs_def.h"
+grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"
+
 if grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h" 2>/dev/null; then
   echo "[SUSFS] Kernel layer already patched"
 else
