@@ -14,6 +14,65 @@ test -f "$KSU_DIR/kernel/Kconfig"
 test -L "$ROOT/drivers/kernelsu"
 test "$(readlink "$ROOT/drivers/kernelsu")" = "../ksu-src/ksun/kernel"
 
+# The pinned early GoRhanHee KSUN source uses the post-5.9 fsnotify callback
+# even though this Samsung kernel is 4.14. Adapt the old callback source.
+python3 - "$KSU_DIR/kernel/pkg_observer.c" <<'PYKSU'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+s = p.read_text()
+old = """static int ksu_handle_inode_event(struct fsnotify_mark *mark, u32 mask,
+\t\t\t\t  struct inode *inode, struct inode *dir,
+\t\t\t\t  const struct qstr *file_name, u32 cookie)
+{
+\tif (!file_name)
+\t\treturn 0;
+\tif (mask & FS_ISDIR)
+\t\treturn 0;
+\tif (file_name->len == 13 &&
+\t    !memcmp(file_name->name, "packages.list", 13)) {
+\t\tpr_info("packages.list detected: %d\\n", mask);
+\t\ttrack_throne();
+\t}
+\treturn 0;
+}
+
+static const struct fsnotify_ops ksu_ops = {
+\t.handle_inode_event = ksu_handle_inode_event,
+};
+"""
+new = """static int ksu_handle_inode_event(struct fsnotify_group *group,
+\t\t\t\t  struct inode *inode,
+\t\t\t\t  struct fsnotify_mark *inode_mark,
+\t\t\t\t  struct fsnotify_mark *vfsmount_mark,
+\t\t\t\t  u32 mask, const void *data, int data_type,
+\t\t\t\t  const unsigned char *file_name, u32 cookie,
+\t\t\t\t  struct fsnotify_iter_info *iter_info)
+{
+\tif (!file_name)
+\t\treturn 0;
+\tif (mask & FS_ISDIR)
+\t\treturn 0;
+\tif (strlen(file_name) == 13 &&
+\t    !memcmp(file_name, "packages.list", 13)) {
+\t\tpr_info("packages.list detected: %d\\n", mask);
+\t\ttrack_throne();
+\t}
+\treturn 0;
+}
+
+static const struct fsnotify_ops ksu_ops = {
+\t.handle_event = ksu_handle_inode_event,
+};
+"""
+if old in s:
+    s = s.replace(old, new, 1)
+elif ".handle_event = ksu_handle_inode_event" not in s:
+    raise SystemExit("KernelSU pkg_observer fsnotify callback anchor not found")
+if "#include <linux/string.h>" not in s:
+    s = s.replace("#include <linux/slab.h>\n", "#include <linux/slab.h>\n#include <linux/string.h>\n", 1)
+p.write_text(s)
+PYKSU
+
 curl -fL --retry 3 "$KERNEL_PATCH_URL" -o "$TMP_DIR/susfs-kernel.patch"
 curl -fL --retry 3 "$KSUN_PATCH_URL" -o "$TMP_DIR/susfs-ksun.patch"
 
@@ -146,7 +205,7 @@ if "susfs_spoof_cmdline_or_bootconfig" not in s:
     assert anchor in s, "cmdline.c include anchor not found"
     s = s.replace(anchor, anchor + decl, 1)
     anchor = "static int cmdline_proc_show(struct seq_file *m, void *v)\n{\n"
-    insert = anchor + "#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\n\tif (!susfs_spoof_cmdline_or_bootconfig(m)) {\n\t\tseq_putc(m, '\n');\n\t\treturn 0;\n\t}\n#endif\n"
+    insert = anchor + "#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\n\tif (!susfs_spoof_cmdline_or_bootconfig(m)) {\n\t\tseq_putc(m, 10);\n\t\treturn 0;\n\t}\n#endif\n"
     assert anchor in s, "cmdline_proc_show anchor not found"
     s = s.replace(anchor, insert, 1)
 p.write_text(s)
@@ -223,7 +282,7 @@ flags_new = """	if (!rollup_mode) {
 		    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
 		    susfs_is_current_non_root_user_app_proc()) {
 			seq_puts(m, "VmFlags: mr mw me");
-			seq_putc(m, '\n');
+			seq_putc(m, 10);
 		} else
 #endif
 		{
