@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Preserve failures from the main build subshell through the tee pipeline.
+set -o pipefail
+
 # =============================================================================
 # KERNEL BUILD SCRIPT FOR EXYNOS 9820 DEVICES
 # Script ini digunakan untuk mengkompilasi kernel Android untuk perangkat Samsung Exynos 9820
