@@ -24,6 +24,10 @@ mkdir -p "$ROOT/include/linux"
 curl -fL --retry 3 "$SUSFS_BASE/fs/susfs.c" -o "$ROOT/fs/susfs.c"
 curl -fL --retry 3 "$SUSFS_BASE/include/linux/susfs.h" -o "$ROOT/include/linux/susfs.h"
 curl -fL --retry 3 "$SUSFS_BASE/include/linux/susfs_def.h" -o "$ROOT/include/linux/susfs_def.h"
+
+# Linux 4.14 has linux/bitops.h; linux/bits.h was introduced later.
+sed -i 's|#include <linux/bits.h>|#include <linux/bitops.h>|' "$ROOT/include/linux/susfs_def.h"
+grep -q '#include <linux/bitops.h>' "$ROOT/include/linux/susfs_def.h"
 grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"
 
 if grep -q 'obj-$(CONFIG_KSU_SUSFS) += susfs.o' "$ROOT/fs/Makefile" && grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"; then
