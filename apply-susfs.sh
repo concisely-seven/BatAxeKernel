@@ -56,6 +56,77 @@ if "#include <linux/susfs_def.h>" not in s:
     s = s.replace(needle, needle + "#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_TRY_UMOUNT)\n#include <linux/susfs_def.h>\n#endif\n", 1)
 p.write_text(s)
 
+# namespace.c: the generic hunk misses Samsung's fslog.h include context.
+p = root / "fs/namespace.c"
+s = p.read_text()
+if "static DEFINE_IDA(susfs_mnt_id_ida);" not in s:
+    anchor = "#include <linux/fslog.h>\\n"
+    assert anchor in s, "namespace.c fslog.h include anchor not found"
+    susfs_block = """#include <linux/susfs.h>
+#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT)
+extern bool susfs_is_current_ksu_domain(void);
+extern bool susfs_is_current_zygote_domain(void);
+extern bool susfs_is_boot_completed_triggered;
+static DEFINE_IDA(susfs_mnt_id_ida);
+static DEFINE_IDA(susfs_mnt_group_ida);
+static int susfs_mnt_id_start = DEFAULT_SUS_MNT_ID;
+static int susfs_mnt_group_start = DEFAULT_SUS_MNT_GROUP_ID;
+#define CL_ZYGOTE_COPY_MNT_NS BIT(24)
+#define CL_COPY_MNT_NS BIT(25)
+#endif
+#if defined(CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT)
+bool susfs_is_auto_add_sus_ksu_default_mount_enabled = true;
+#endif
+#if defined(CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT)
+bool susfs_is_auto_add_sus_bind_mount_enabled = true;
+#endif
+#if defined(CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT)
+bool susfs_is_auto_add_try_umount_for_bind_mount_enabled = true;
+#endif
+"""
+    s = s.replace(anchor, anchor + susfs_block, 1)
+p.write_text(s)
+
+# avc.c: the upstream hunk targets a newer avc_dump_query signature and
+# fuzz can place the body in the wrong function on this 4.14 tree.
+p = root / "security/selinux/avc.c"
+s = p.read_text()
+bad = """#ifdef CONFIG_KSU_SUSFS
+	if (unlikely(tsid == susfs_ksu_sid && susfs_is_avc_log_spoofing_enabled)) {
+		if (rc)
+			audit_log_format(ab, " tsid=%d", susfs_kernel_sid);
+		else
+			audit_log_format(ab, " tcontext=%s", "u:r:kernel:s0");
+		goto bypass_orig_flow;
+	}
+#endif
+"""
+s = s.replace(bad, "")
+s = s.replace("""	BUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));
+	audit_log_format(ab, " tclass=%s", secclass_map[tclass-1].name);
+}""", """#ifdef CONFIG_KSU_SUSFS
+	if (unlikely(tsid == susfs_ksu_sid && susfs_is_avc_log_spoofing_enabled)) {
+		if (rc)
+			audit_log_format(ab, " tsid=%d", susfs_kernel_sid);
+		else
+			audit_log_format(ab, " tcontext=%s", "u:r:kernel:s0");
+		goto bypass_orig_flow;
+	}
+#endif
+	if (rc)
+		audit_log_format(ab, " tsid=%d", tsid);
+	else {
+		audit_log_format(ab, " tcontext=%s", scontext);
+		kfree(scontext);
+	}
+#ifdef CONFIG_KSU_SUSFS
+bypass_orig_flow:
+#endif
+	BUG_ON(!tclass || tclass >= ARRAY_SIZE(secclass_map));
+	audit_log_format(ab, " tclass=%s", secclass_map[tclass-1].name);
+}""", 1)
+p.write_text(s)
+
 # cmdline.c: preserve Samsung's new_command_line path and call SUSFS before it.
 p = root / "fs/proc/cmdline.c"
 s = p.read_text()
