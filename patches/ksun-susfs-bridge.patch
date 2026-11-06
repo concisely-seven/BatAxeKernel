@@ -16,7 +16,7 @@ diff --git a/kernel/Kconfig b/kernel/Kconfig
 index 0000000..0000000 100644
 --- a/kernel/Kconfig
 +++ b/kernel/Kconfig
-@@ -76,6 +76,78 @@ config KSU_SYSCALL_TABLE_HOOK
+@@ -76,6 +76,88 @@ config KSU_SYSCALL_TABLE_HOOK
  	  Patch sys_call_table entries directly to hook syscalls without
  	  kprobes or tracepoints. Intended for non-GKI kernels where kprobes
  	  are unavailable or non-functional.
