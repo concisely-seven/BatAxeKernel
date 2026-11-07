@@ -171,6 +171,33 @@ static int ksu_task_prctl(int option, unsigned long arg2, unsigned long arg3,
     l = l.replace(list_marker, list_replacement, 1)
     lsm.write_text(l)
 
+# Linux 4.14 predates the selinux_state wrapper (introduced after 4.14).
+# Use the legacy SELinux globals exposed by security/selinux/include/{avc,security}.h.
+selinux = ksu / "selinux" / "selinux.c"
+t = selinux.read_text()
+if "selinux_enforcing = enforce;" not in t:
+    t = t.replace(
+        '#include "selinux.h"\n',
+        '#include "selinux.h"\n#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)\n#include "avc.h"\n#include "security.h"\n#endif\n',
+        1
+    )
+    t = t.replace(
+        '    selinux_state.enforcing = enforce;',
+        '#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)\n    selinux_enforcing = enforce;\n#else\n    selinux_state.enforcing = enforce;\n#endif',
+        1
+    )
+    t = t.replace(
+        '    if (selinux_state.disabled) {\n        return false;\n    }',
+        '#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)\n    if (!selinux_enabled)\n        return false;\n#else\n    if (selinux_state.disabled) {\n        return false;\n    }\n#endif',
+        1
+    )
+    t = t.replace(
+        '    return selinux_state.enforcing;',
+        '#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 17, 0)\n    return selinux_enforcing;\n#else\n    return selinux_state.enforcing;\n#endif',
+        1
+    )
+    selinux.write_text(t)
+
 # Fail closed if the patch was only partially applied.
 if "ksu_handle_susfs_prctl" not in sc.read_text():
     raise SystemExit("legacy-SUSFS bridge: handler verification failed")
