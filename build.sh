@@ -45,14 +45,45 @@ abort ()
     exit -1
 }
 
-check () 
+check ()
 {
-    if [ $? -eq 0 ]; then
+    local status=$?
+    separator
+    if [ "$status" -eq 0 ]; then
         echo "-- Setup $1 Done!"
     else
-        quotes "Failed! Cancel the Script"
+        quotes "Failed! Cancel the Script (exit $status)"
         abort
     fi
+}
+
+apply_patch_file ()
+{
+    local url="$1"
+    local label="$2"
+    local patch_file
+    patch_file="$(mktemp)"
+
+    quotes "Downloading $label patch"
+    if ! curl -fL --retry 3 --retry-delay 2 "$url" -o "$patch_file"; then
+        rm -f "$patch_file"
+        quotes "Failed to download $label patch"
+        abort
+    fi
+
+    if ! grep -q '^diff --git ' "$patch_file"; then
+        rm -f "$patch_file"
+        quotes "$label patch is not a valid git diff"
+        abort
+    fi
+
+    quotes "Applying $label patch"
+    if ! patch --batch --forward -p1 < "$patch_file"; then
+        rm -f "$patch_file"
+        quotes "Failed to apply $label patch"
+        abort
+    fi
+    rm -f "$patch_file"
 }
 
 submodule () {
@@ -175,7 +206,7 @@ detect_env ()
     separator
 
     DATE=`date +"%Y%m%d"`
-    BUILD_URL="https://raw.githubusercontent.com/papaL3xa/build/refs/heads/exynos9820/"
+    BUILD_URL="https://raw.githubusercontent.com/papaL3xa/builds/refs/heads/exynos9820/"
     REPO_URL="https://raw.githubusercontent.com/ivanmeler/android_kernel_samsung_beyondlte/refs/heads/oneui5_beyond/"
     KERNEL_NAME=Se7enKernel
     export KBUILD_BUILD_USER=Se7enKernel
@@ -416,14 +447,14 @@ kernelsu ()
     if ! grep -rnw 'drivers/input/input.c' -e 'CONFIG_KSU' > /dev/null; then
         quotes "Patching KernelSU to Kernel Tree"
         separator
-        patch -p1 < <(curl -s "https://raw.githubusercontent.com/papaL3xa/builds/refs/heads/exynos9820/patches/KernelSUBataxe.patch")
+        apply_patch_file "${BUILD_URL}patch/KernelSU.patch" "KernelSU kernel hooks"
         separator
         check "KernelSU"
     fi
 
     if ! test -f "arch/arm64/configs/ksu.config"; then
         quotes "Getting KernelSU Next Defconfig"
-        curl -LSs "https://raw.githubusercontent.com/papaL3xa/build/refs/heads/exynos9820/configs/$KSU_NEXT" -o arch/arm64/configs/$KSU_NEXT
+        curl -fLSs "${BUILD_URL}configs/$KSU_NEXT" -o arch/arm64/configs/$KSU_NEXT
         check "KernelSU Next Defconfig"
     fi
 
@@ -445,9 +476,13 @@ kernelsu ()
         separator
         quotes "Patching SuSFS to Kernel Tree"
         separator
-        patch -p1 < <(curl -s "https://raw.githubusercontent.com/papaL3xa/builds/refs/heads/exynos9820/patches/susfs159Bataxe.patch")
+        apply_patch_file "${BUILD_URL}patch/SuSFS.patch" "SUSFS v1.5.7 kernel integration"
+        test -s include/linux/susfs.h || abort
+        test -s include/linux/susfs_def.h || abort
+        test -s fs/susfs.c || abort
+        grep -q 'susfs.o' fs/Makefile || abort
         separator
-        check "SuSFS"
+        check "SuSFS v1.5.7"
     fi
 }
 
