@@ -96,9 +96,9 @@ detect_env() {
     DATE=`date +"%Y%m%d"`
     BUILD_URL="https://raw.githubusercontent.com/papaL3xa/builds/refs/heads/exynos9820/"
     REPO_URL="https://raw.githubusercontent.com/ivanmeler/android_kernel_samsung_beyondlte/refs/heads/oneui5_beyond/" 
-    KERNEL_NAME=SagaKernel
-    export KBUILD_BUILD_USER=papaL3xa
-    export KBUILD_BUILD_HOST=SagaKernel
+    KERNEL_NAME=Se7enKernel
+    export KBUILD_BUILD_USER=Se7enKernel
+    export KBUILD_BUILD_HOST=Se7enKernel
 
     # Tentukan device berdasarkan SOC
     if [[ "$SOC" == "5" ]]; then
@@ -485,7 +485,7 @@ kernel() {
 
 # Fungsi untuk update konfigurasi kernel
 update_kernel_config() {
-    sed -i "s/CONFIG_LOCALVERSION=\"\"/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-$KERNEL_VERSION-$DEVICE-$MODEL\"/" arch/arm64/configs/$KERNEL_DEFCONFIG
+    sed -i "s/CONFIG_LOCALVERSION=\"\"/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-$KERNEL_VERSION-$MODEL\"/" arch/arm64/configs/$KERNEL_DEFCONFIG
     sed -i "s/CONFIG_LOCALVERSION_AUTO=y/CONFIG_LOCALVERSION_AUTO=n/" arch/arm64/configs/$KERNEL_DEFCONFIG
 }
 
@@ -543,13 +543,13 @@ setup_boot_image_components() {
     mv ../../../out/arch/arm64/boot/Image boot.img-kernel
     echo -e "0x10000000" > boot.img-base
     echo -e $BOARD > boot.img-board
-    echo -e "loop.max_part=7" > boot.img-cmdline
+    echo -e "androidboot.selinux=permissive androidboot.selinux=permissive loop.max_part=7" > boot.img-cmdline
     echo -e "sha1" > boot.img-hashtype
     echo -e "1" > boot.img-header_version
     echo -e "AOSP" > boot.img-imgtype
     echo -e "0x00008000" > boot.img-kernel_offset
     echo -e "45285376" > boot.img-origsize
-    echo -e "2023-04" > boot.img-os_patch_level
+    echo -e "2099-12" > boot.img-os_patch_level
     echo -e "12.0.0" > boot.img-os_version
     echo -e "2048" > boot.img-pagesize
     echo -e "0x01000000" > boot.img-ramdisk_offset
@@ -756,7 +756,7 @@ setup_model() {
     ;;
     d1xks)
         SOC=5
-        BOARD=SRPSD23A002KU
+        BOARD=SRPSD26B008KU
     ;;
     d2s)
         SOC=5
