@@ -467,7 +467,7 @@ kernelsu ()
         fi
 
         git submodule add -f -q https://github.com/sidex15/KernelSU-Next > /dev/null
-        bash <(curl -LSs "https://raw.githubusercontent.com/sidex15/KernelSU-Next/refs/heads/next-susfs-experimental/kernel/setup.sh")
+        bash <(curl -fLSs "https://raw.githubusercontent.com/sidex15/KernelSU-Next/refs/heads/next-susfs_v1.5.5-v1.5.7/kernel/setup.sh") next-susfs_v1.5.5-v1.5.7
         separator
         check "KernelSU Next"
     fi
