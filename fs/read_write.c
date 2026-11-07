@@ -25,9 +25,7 @@
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
 
-#ifdef CONFIG_KSU
-#include <ksu_hook.h>
-#endif
+/* KernelSU-Next hook prototypes are declared locally below for this 4.14 tree. */
 
 #ifdef CONFIG_SECURITY_DEFEX
 #include <linux/defex.h>
