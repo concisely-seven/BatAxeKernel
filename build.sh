@@ -460,7 +460,15 @@ kernelsu() {
         abort
     fi
 
+    # Bridge the new KSUN source to this kernel tree's SUSFS v1.5.12 prctl ABI.
+    # The pinned KSUN revision carries the v2.0 reboot ABI, while this kernel
+    # intentionally retains the known-good v1.5.12 SUSFS implementation.
+    quotes "Applying legacy SUSFS v1.5.12 prctl bridge"
+    python3 scripts/patch_ksun_legacy_susfs.py || abort
+
     # Guard the exact compatibility mechanisms expected by Linux 4.14.
+    grep -q "ksu_handle_susfs_prctl" KernelSU-Next/kernel/supercalls.c || abort
+    grep -q "LSM_HOOK_INIT(task_prctl, ksu_task_prctl)" KernelSU-Next/kernel/lsm_hooks.c || abort
     grep -q "KSU_DECL_FSNOTIFY_OPS" KernelSU-Next/kernel/pkg_observer.c || abort
     grep -q "KERNEL_VERSION(4, 12, 0)" KernelSU-Next/kernel/pkg_observer.c || abort
     grep -q "KSU_MANUAL_HOOK" KernelSU-Next/kernel/Kconfig || abort
