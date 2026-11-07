@@ -96,9 +96,9 @@ detect_env() {
     DATE=`date +"%Y%m%d"`
     BUILD_URL="https://raw.githubusercontent.com/papaL3xa/builds/refs/heads/exynos9820/"
     REPO_URL="https://raw.githubusercontent.com/ivanmeler/android_kernel_samsung_beyondlte/refs/heads/oneui5_beyond/" 
-    KERNEL_NAME=BatAxeKernel
-    export KBUILD_BUILD_USER=papaL3xa
-    export KBUILD_BUILD_HOST=BatAxeKernel
+    KERNEL_NAME=Se7enKernel
+    export KBUILD_BUILD_USER=Se7enKernel
+    export KBUILD_BUILD_HOST=Se7enKernel
 
     # Tentukan device berdasarkan SOC
     if [[ "$SOC" == "5" ]]; then
@@ -493,7 +493,7 @@ kernel() {
 
 # Fungsi untuk update konfigurasi kernel
 update_kernel_config() {
-    sed -i "s/CONFIG_LOCALVERSION=\"\"/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-$KERNEL_VERSION-$DEVICE-$MODEL\"/" arch/arm64/configs/$KERNEL_DEFCONFIG
+    sed -i "s/CONFIG_LOCALVERSION=\"\"/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-$KERNEL_VERSION-$MODEL\"/" arch/arm64/configs/$KERNEL_DEFCONFIG
     sed -i "s/CONFIG_LOCALVERSION_AUTO=y/CONFIG_LOCALVERSION_AUTO=n/" arch/arm64/configs/$KERNEL_DEFCONFIG
 }
 
