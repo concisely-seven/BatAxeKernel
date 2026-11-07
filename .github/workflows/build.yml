@@ -6,6 +6,7 @@ on:
     branches:
       - Se7enKernel-1.5.12-d1xks
       - KSUN-Upgrade-Se7enKernel-1.5.12-d1xks
+      - KSUN-Upgrade-Se7enKernel-1.5.12-d1xks-test2
   workflow_dispatch:
     inputs:
       version:
