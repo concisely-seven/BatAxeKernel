@@ -2,6 +2,9 @@ name: Build-Test
 run-name: 'CI: Build ${{ github.event.inputs.version }} for device ${{ github.event.inputs.devices }} With Clang ${{ github.event.inputs.llvm }}'
 
 on:
+  push:
+    branches:
+      - Se7enKernel-Rebrand-d1xks
   workflow_dispatch:
     inputs:
       version:
@@ -51,7 +54,7 @@ jobs:
       contents: write
     strategy:
       matrix:
-        device: ${{ fromJSON(github.event.inputs.devices) }}
+        device: ${{ fromJSON(github.event.inputs.devices || '["d1xks"]') }}
 
     steps:
       - name: 📀 Checkout Tree
@@ -71,18 +74,18 @@ jobs:
         run: |
           SHA=$(git rev-parse --short ${{ github.sha }})
           echo BUILD_DATE=$(date +'%Y%m%d') >> $GITHUB_ENV
-          echo BUILD_KERNEL_VERSION=CI-${{ github.event.inputs.version }}-$SHA >> $GITHUB_ENV
+          echo BUILD_KERNEL_VERSION=Rebrand >> $GITHUB_ENV
 
       - name: ⚙️ setting permission
         run: chmod +x build.sh
 
       - name: 🏇🏻 Building Kernel
         run: |
-            bash build.sh -m ${{ matrix.device }} -v ${{ env.BUILD_KERNEL_VERSION }} -k ${{ github.event.inputs.ksun }} -l ${{ github.event.inputs.llvm }} -r n
+            bash build.sh -m ${{ matrix.device }} -v Rebrand -k y -l 13 -r y
 
       - name: 🧩 Upload Kernel
         uses: actions/upload-artifact@v4
         with:
-          name: "SagaKernel-${{ env.BUILD_KERNEL_VERSION }}-${{ env.BUILD_DATE }}-${{ env.BUILD_DEVICE }}-${{ matrix.device }}-Clang${{ github.event.inputs.llvm }}"
-          path: "build/out/${{ matrix.device }}/zip/*"
+          name: "Se7enKernel-Rebrand-d1xks-${{ env.BUILD_DATE }}-Clang13"
+          path: "build/export/*.zip"
           if-no-files-found: error
