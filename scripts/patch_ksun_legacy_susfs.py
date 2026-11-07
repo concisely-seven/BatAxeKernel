@@ -119,7 +119,7 @@ int ksu_handle_susfs_prctl(int option, unsigned long cmd,
     }
 
     if (arg5 && copy_to_user((void __user *)arg5, &err, sizeof(err)))
-        pr_warn("susfs: failed to copy prctl result for command 0x%lx\\n", cmd);
+        pr_warn("susfs: failed to copy prctl result for command 0x%lx\n", cmd);
 
     /* Let sys_prctl() continue; the legacy ABI reports status through arg5. */
     return -ENOSYS;
@@ -188,23 +188,23 @@ selinux = ksu / "selinux" / "selinux.c"
 t = selinux.read_text()
 if "selinux_enforcing = enforce;" not in t:
     t = t.replace(
-        '#include "selinux.h"\\n',
-        '#include "selinux.h"\\n#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)\\n#include "avc.h"\\n#include "security.h"\\n#endif\\n',
+        '#include "selinux.h"\n',
+        '#include "selinux.h"\n#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)\n#include "avc.h"\n#include "security.h"\n#endif\n',
         1
     )
     t = t.replace(
         '    selinux_state.enforcing = enforce;',
-        '#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)\\n    selinux_enforcing = enforce;\\n#else\\n    selinux_state.enforcing = enforce;\\n#endif',
+        '#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)\n    selinux_enforcing = enforce;\n#else\n    selinux_state.enforcing = enforce;\n#endif',
         1
     )
     t = t.replace(
-        '    if (selinux_state.disabled) {\\n        return false;\\n    }',
-        '#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)\\n    if (!selinux_enabled)\\n        return false;\\n#else\\n    if (selinux_state.disabled) {\\n        return false;\\n    }\\n#endif',
+        '    if (selinux_state.disabled) {\n        return false;\n    }',
+        '#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)\n    if (!selinux_enabled)\n        return false;\n#else\n    if (selinux_state.disabled) {\n        return false;\n    }\n#endif',
         1
     )
     t = t.replace(
         '    return selinux_state.enforcing;',
-        '#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)\\n    return selinux_enforcing;\\n#else\\n    return selinux_state.enforcing;\\n#endif',
+        '#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 19, 0)\n    return selinux_enforcing;\n#else\n    return selinux_state.enforcing;\n#endif',
         1
     )
     selinux.write_text(t)
