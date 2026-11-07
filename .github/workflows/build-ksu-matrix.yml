@@ -1,15 +1,15 @@
-name: N971N KernelSU Next Legacy
+name: Se7enKernel Manual
 
 on:
   push:
     branches:
-      - kernelsu-next
+      - Se7enKernel-Manual-d1xks
   workflow_dispatch:
     inputs:
       version:
         description: Kernel local version suffix
         required: true
-        default: N971N-KSUN
+        default: Manual
 
 permissions:
   contents: read
@@ -49,7 +49,7 @@ jobs:
       - name: Build N971N kernel and flashable ZIP
         shell: bash
         env:
-          BUILD_VERSION: ${{ inputs.version || 'N971N-KSUN' }}
+          BUILD_VERSION: ${{ inputs.version || 'Manual' }}
         run: |
           set -euo pipefail
           bash build.sh -m d1xks -v "$BUILD_VERSION" -k y -l 13 -r y
@@ -72,7 +72,7 @@ jobs:
       - name: Upload kernel ZIP and build metadata
         uses: actions/upload-artifact@v4
         with:
-          name: N971N-U2-KSUN-Legacy-${{ github.run_number }}
+          name: Se7enKernel-Manual-d1xks-${{ github.run_number }}
           path: |
             build/export/*.zip
             build/export/ksu-source-info.txt
