@@ -432,7 +432,7 @@ kernelsu() {
     git submodule init
     git submodule update --init --recursive
 
-    if ! test -f "KernelSU-Next/kernel/Kconfig" || ! test -f "KernelSU-Next/kernel/Kbuild"; then
+    if ! test -f "KernelSU-Next/kernel/Kconfig" || ! test -f "KernelSU-Next/kernel/Makefile"; then
         quotes "ERROR: KernelSU-Next kernel source is missing"
         abort
     fi
