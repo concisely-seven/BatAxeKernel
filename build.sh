@@ -430,30 +430,32 @@ setup_clang_environment() {
 
 kernelsu() {
     separator
-    quotes "Checking KernelSU Next Directory"
-    
-    # Cek apakah drivers/kernelsu sudah ada
-    if test -d "drivers/kernelsu"; then
-        quotes "KernelSU Next Directory Found!"
-    else
-        quotes "KernelSU Next Directory Not Found! Please run: git submodule update --init --recursive"
-        quotes "Trying to initialize submodules..."
-        
-        # Coba initialize submodules
-        git submodule init
-        git submodule update --recursive --remote
-        
-        # Cek lagi setelah update
-        if test -d "drivers/kernelsu"; then
-            quotes "KernelSU Next Directory successfully initialized!"
-        else
-            quotes "ERROR: KernelSU Next still not found after submodule update!"
-            quotes "Please check if KernelSU submodule is properly configured in .gitmodules"
-            abort
-        fi
+    quotes "Setting up KernelSU Next kernel integration"
+
+    # The repository is checked out as a submodule at KernelSU-Next/,
+    # while this legacy 4.14 tree expects its kernel sources at drivers/kernelsu/.
+    git submodule init
+    git submodule update --init --recursive
+
+    if ! test -f "KernelSU-Next/kernel/Kconfig" || ! test -f "KernelSU-Next/kernel/Kbuild"; then
+        quotes "ERROR: KernelSU-Next kernel source is missing"
+        abort
     fi
-    
-    check "KernelSU Setup"
+
+    # Create the expected in-tree path without copying or changing KSUN sources.
+    ln -sfn ../KernelSU-Next/kernel drivers/kernelsu
+
+    if ! test -L "drivers/kernelsu" || ! test -f "drivers/kernelsu/Kconfig"; then
+        quotes "ERROR: drivers/kernelsu integration symlink is invalid"
+        abort
+    fi
+
+    # Keep the Kbuild hook present exactly once.
+    if ! grep -qE '^[[:space:]]*obj-\$\(CONFIG_KSU\)[[:space:]]*\+=[[:space:]]*kernelsu/' drivers/Makefile; then
+        printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+    fi
+
+    quotes "KernelSU Next source linked at drivers/kernelsu"
 }
 
 # =============================================================================
