@@ -445,6 +445,54 @@ kernelsu() {
         abort
     fi
 
+    # KernelSU-Next observer uses a newer fsnotify_ops API.
+    # Linux 4.14 exposes handle_event(), not handle_inode_event().
+    python3 - <<'PY'
+from pathlib import Path
+import re
+p = Path("drivers/kernelsu/pkg_observer.c")
+s = p.read_text()
+if ".handle_inode_event =" in s:
+    replacement = """static int ksu_handle_inode_event(struct fsnotify_group *group,
+                                  struct inode *inode,
+                                  struct fsnotify_mark *inode_mark,
+                                  struct fsnotify_mark *vfsmount_mark,
+                                  u32 mask, const void *data, int data_type,
+                                  const unsigned char *file_name, u32 cookie,
+                                  struct fsnotify_iter_info *iter_info)
+{
+    if (!file_name)
+        return 0;
+    if (mask & FS_ISDIR)
+        return 0;
+    if (!strcmp((const char *)file_name, "packages.list")) {
+        pr_info("packages.list detected: %d\\n", mask);
+        track_throne(false);
+    }
+    return 0;
+}
+
+static const struct fsnotify_ops ksu_ops = {
+    .handle_event = ksu_handle_inode_event,
+};
+
+"""
+    pattern = r"static int ksu_handle_inode_event\(.*?\n};\n\n(?=static int add_mark_on_inode)"
+    s2, n = re.subn(pattern, replacement, s, count=1, flags=re.S)
+    if n != 1:
+        raise SystemExit("ERROR: could not adapt KernelSU observer callback for Linux 4.14")
+    p.write_text(s2)
+elif ".handle_event = ksu_handle_inode_event" in s:
+    print("KernelSU observer callback already adapted for Linux 4.14")
+else:
+    raise SystemExit("ERROR: unexpected KernelSU observer source; refusing unsafe patch")
+print("KernelSU observer callback adapted to Linux 4.14 fsnotify_ops")
+PY
+    if [ $? -ne 0 ]; then
+        quotes "ERROR: KernelSU observer compatibility patch failed"
+        abort
+    fi
+
     # Keep the Kbuild hook present exactly once.
     if ! grep -qE '^[[:space:]]*obj-\$\(CONFIG_KSU\)[[:space:]]*\+=[[:space:]]*kernelsu/' drivers/Makefile; then
         printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
