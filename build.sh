@@ -484,6 +484,15 @@ static const struct fsnotify_ops ksu_ops = {
 };
 """
 s = s[:start] + replacement + s[end:]
+
+# Linux 4.14 in this Exynos tree uses the legacy four-argument
+# fsnotify_add_mark(mark, inode, mnt, allow_dups) API. It does not
+# provide fsnotify_add_inode_mark(), which belongs to newer fsnotify APIs.
+old_call = "fsnotify_add_inode_mark(m, inode, 0)"
+new_call = "fsnotify_add_mark(m, inode, NULL, 0)"
+if old_call not in s:
+    raise SystemExit("ERROR: expected KSUN inode-mark call not found")
+s = s.replace(old_call, new_call, 1)
 p.write_text(s)
 print("Patched KSUN fsnotify observer for Linux 4.14")
 PY
