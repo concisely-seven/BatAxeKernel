@@ -450,6 +450,48 @@ kernelsu() {
         abort
     fi
 
+    # Adapt the KSUN fsnotify observer to this Linux 4.14 tree.
+    # Linux 4.14 exposes fsnotify_ops.handle_event(), not handle_inode_event().
+    python3 - <<'PY'
+from pathlib import Path
+p = Path("KernelSU-Next/kernel/pkg_observer.c")
+s = p.read_text()
+start = s.find("static int ksu_handle_inode_event(")
+end = s.find("\nstatic int add_mark_on_inode", start)
+if start < 0 or end < 0:
+    raise SystemExit("ERROR: cannot locate KSUN observer callback block")
+replacement = """static int ksu_handle_event(struct fsnotify_group *group,
+                            struct inode *inode,
+                            struct fsnotify_mark *inode_mark,
+                            struct fsnotify_mark *vfsmount_mark,
+                            u32 mask, const void *data, int data_type,
+                            const unsigned char *file_name, u32 cookie,
+                            struct fsnotify_iter_info *iter_info)
+{
+    if (!file_name)
+        return 0;
+    if (mask & FS_ISDIR)
+        return 0;
+    if (file_name[13] == '\\0' && !memcmp(file_name, "packages.list", 13)) {
+        pr_info("packages.list detected: %d\\n", mask);
+        track_throne();
+    }
+    return 0;
+}
+
+static const struct fsnotify_ops ksu_ops = {
+    .handle_event = ksu_handle_event,
+};
+"""
+s = s[:start] + replacement + s[end:]
+p.write_text(s)
+print("Patched KSUN fsnotify observer for Linux 4.14")
+PY
+    if [ $? -ne 0 ]; then
+        quotes "ERROR: Linux 4.14 KernelSU observer compatibility patch failed"
+        abort
+    fi
+
     # Keep the Kbuild hook present exactly once.
     if ! grep -qE '^[[:space:]]*obj-\$\(CONFIG_KSU\)[[:space:]]*\+=[[:space:]]*kernelsu/' drivers/Makefile; then
         printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
