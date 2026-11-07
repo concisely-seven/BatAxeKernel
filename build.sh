@@ -425,14 +425,32 @@ setup_clang_environment() {
 
 kernelsu() {
     separator
+    quotes "Setting up KernelSU Next kernel integration"
 
-    # Setup KernelSU Next
-    if ! test -d "drivers/kernelsu"; then
-        quotes "update KernelSU Next as Submodule"
-        separator
+    # The repository is checked out as a submodule at KernelSU-Next/,
+    # while this legacy 4.14 tree expects its kernel sources at drivers/kernelsu/.
+    git submodule init
+    git submodule update --init --recursive
 
-     git submodule init && git submodule update --remote
+    if ! test -f "KernelSU-Next/kernel/Kconfig" || ! test -f "KernelSU-Next/kernel/Kbuild"; then
+        quotes "ERROR: KernelSU-Next kernel source is missing"
+        abort
     fi
+
+    # Create the expected in-tree path without copying or changing KSUN sources.
+    ln -sfn ../KernelSU-Next/kernel drivers/kernelsu
+
+    if ! test -L "drivers/kernelsu" || ! test -f "drivers/kernelsu/Kconfig"; then
+        quotes "ERROR: drivers/kernelsu integration symlink is invalid"
+        abort
+    fi
+
+    # Keep the Kbuild hook present exactly once.
+    if ! grep -qE '^[[:space:]]*obj-\$\(CONFIG_KSU\)[[:space:]]*\+=[[:space:]]*kernelsu/' drivers/Makefile; then
+        printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+    fi
+
+    quotes "KernelSU Next source linked at drivers/kernelsu"
 }
 
 # =============================================================================
