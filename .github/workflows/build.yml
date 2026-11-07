@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - Se7enKernel-1.5.12-d1xks
+      - KSUN-Upgrade-Se7enKernel-1.5.12-d1xks
   workflow_dispatch:
     inputs:
       version:
