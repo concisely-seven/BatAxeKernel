@@ -430,10 +430,11 @@ setup_clang_environment() {
 
 kernelsu() {
     separator
-    quotes "Setting up KernelSU Next kernel integration"
+    quotes "Setting up KernelSU Next legacy-SUSFS integration"
 
-    # The repository is checked out as a submodule at KernelSU-Next/,
-    # while this legacy 4.14 tree expects its kernel sources at drivers/kernelsu/.
+    # Keep the tested GoRhanHee fork, but pin an explicit source revision.
+    # legacy-susfs contains compatibility paths for pre-4.18 fsnotify APIs,
+    # and manual hooks intended for older non-GKI kernels such as this 4.14 tree.
     git submodule init
     git submodule update --init --recursive
 
@@ -442,7 +443,31 @@ kernelsu() {
         abort
     fi
 
-    # Create the expected in-tree path without copying or changing KSUN sources.
+    KSU_BRANCH="legacy-susfs"
+    KSU_COMMIT="362b2cd85d1b8a3d95698399876b1dddee243df8"
+
+    if [ "$(git -C KernelSU-Next rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+        quotes "Unshallowing KernelSU-Next history for correct KSU version code"
+        git -C KernelSU-Next fetch --unshallow origin || abort
+    fi
+
+    quotes "Fetching pinned KernelSU Next branch: $KSU_BRANCH"
+    git -C KernelSU-Next fetch origin "refs/heads/$KSU_BRANCH" || abort
+    git -C KernelSU-Next checkout --detach "$KSU_COMMIT" || abort
+
+    if [ "$(git -C KernelSU-Next rev-parse HEAD)" != "$KSU_COMMIT" ]; then
+        quotes "ERROR: KernelSU Next commit pin verification failed"
+        abort
+    fi
+
+    # Guard the exact compatibility mechanisms expected by Linux 4.14.
+    grep -q "KSU_DECL_FSNOTIFY_OPS" KernelSU-Next/kernel/pkg_observer.c || abort
+    grep -q "KERNEL_VERSION(4, 12, 0)" KernelSU-Next/kernel/pkg_observer.c || abort
+    grep -q "KSU_MANUAL_HOOK" KernelSU-Next/kernel/Kconfig || abort
+    grep -q "ksu_handle_faccessat" fs/open.c || abort
+
+    # This revision already selects the legacy fsnotify callback and mark API
+    # for Linux 4.14. Do not apply the older observer rewrite used by v1.5.12.
     ln -sfn ../KernelSU-Next/kernel drivers/kernelsu
 
     if ! test -L "drivers/kernelsu" || ! test -f "drivers/kernelsu/Kconfig"; then
@@ -450,63 +475,17 @@ kernelsu() {
         abort
     fi
 
-    # Adapt the KSUN fsnotify observer to this Linux 4.14 tree.
-    # Linux 4.14 exposes fsnotify_ops.handle_event(), not handle_inode_event().
-    python3 - <<'PY'
-from pathlib import Path
-p = Path("KernelSU-Next/kernel/pkg_observer.c")
-s = p.read_text()
-start = s.find("static int ksu_handle_inode_event(")
-end = s.find("\nstatic int add_mark_on_inode", start)
-if start < 0 or end < 0:
-    raise SystemExit("ERROR: cannot locate KSUN observer callback block")
-replacement = """static int ksu_handle_event(struct fsnotify_group *group,
-                            struct inode *inode,
-                            struct fsnotify_mark *inode_mark,
-                            struct fsnotify_mark *vfsmount_mark,
-                            u32 mask, const void *data, int data_type,
-                            const unsigned char *file_name, u32 cookie,
-                            struct fsnotify_iter_info *iter_info)
-{
-    if (!file_name)
-        return 0;
-    if (mask & FS_ISDIR)
-        return 0;
-    if (file_name[13] == '\\0' && !memcmp(file_name, "packages.list", 13)) {
-        pr_info("packages.list detected: %d\\n", mask);
-        track_throne();
-    }
-    return 0;
-}
-
-static const struct fsnotify_ops ksu_ops = {
-    .handle_event = ksu_handle_event,
-};
-"""
-s = s[:start] + replacement + s[end:]
-
-# Linux 4.14 in this Exynos tree uses the legacy four-argument
-# fsnotify_add_mark(mark, inode, mnt, allow_dups) API. It does not
-# provide fsnotify_add_inode_mark(), which belongs to newer fsnotify APIs.
-old_call = "fsnotify_add_inode_mark(m, inode, 0)"
-new_call = "fsnotify_add_mark(m, inode, NULL, 0)"
-if old_call not in s:
-    raise SystemExit("ERROR: expected KSUN inode-mark call not found")
-s = s.replace(old_call, new_call, 1)
-p.write_text(s)
-print("Patched KSUN fsnotify observer for Linux 4.14")
-PY
-    if [ $? -ne 0 ]; then
-        quotes "ERROR: Linux 4.14 KernelSU observer compatibility patch failed"
-        abort
-    fi
-
-    # Keep the Kbuild hook present exactly once.
     if ! grep -qE '^[[:space:]]*obj-\$\(CONFIG_KSU\)[[:space:]]*\+=[[:space:]]*kernelsu/' drivers/Makefile; then
         printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
     fi
 
-    quotes "KernelSU Next source linked at drivers/kernelsu"
+    if ! grep -qF 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig; then
+        sed -i '/^endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+    fi
+
+    quotes "KernelSU Next commit: $(git -C KernelSU-Next rev-parse --short HEAD)"
+    separator
+    check "KernelSU Next legacy-SUSFS integration"
 }
 
 # =============================================================================
