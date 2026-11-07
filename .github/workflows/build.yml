@@ -2,6 +2,9 @@ name: Build (CI)
 run-name: 'CI: Build ${{ github.event.inputs.version }} for device ${{ github.event.inputs.devices }}'
 
 on:
+  push:
+    branches:
+      - Se7enKernel-oG-SUSFS-d1xks
   workflow_dispatch:
     inputs:
       version:
@@ -24,7 +27,7 @@ jobs:
       contents: write
     strategy:
       matrix:
-        device: ${{ fromJSON(github.event.inputs.devices) }}
+        device: ${{ fromJSON(github.event.inputs.devices || '["d1xks"]') }}
 
     steps:
       - name: Checkout Tree
@@ -40,15 +43,15 @@ jobs:
         run: |
           SHA=$(git rev-parse --short ${{ github.sha }})
           echo BUILD_DATE=$(date +'%Y%m%d') >> $GITHUB_ENV
-          echo BUILD_KERNEL_VERSION=CI-${{ github.event.inputs.version }}-$SHA >> $GITHUB_ENV
+          echo BUILD_KERNEL_VERSION=oG-SUSFS >> $GITHUB_ENV
           
       - name: Building Kernel
         run: |
-            bash build.sh -m ${{ matrix.device }} -v ${{ env.BUILD_KERNEL_VERSION }} -l ${{ github.event.inputs.llvm }} -r n
+            bash build.sh -m ${{ matrix.device }} -v oG-SUSFS -l 13 -r y
 
       - name: Upload Kernel
         uses: actions/upload-artifact@v4
         with:
-          name: "BatAxeKernel-${{ env.BUILD_KERNEL_VERSION }}-${{ env.BUILD_DATE }}-${{ env.BUILD_DEVICE }}-${{ matrix.device }}-Clang${{ github.event.inputs.clang }}"
-          path: "build/out/${{ matrix.device }}/zip/*"
+          name: "Se7enKernel-oG-SUSFS-d1xks-${{ env.BUILD_DATE }}-Clang13"
+          path: "build/export/*.zip"
           if-no-files-found: error
