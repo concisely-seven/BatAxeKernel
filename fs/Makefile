@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: GPL-2.0
 #
 # Makefile for the Linux filesystems.
+
+# KernelSU-Next hook declarations are kept in its kernel/include directory.
+ccflags-y += -I$(srctree)/KernelSU-Next/kernel/include
 #
 # 14 Sep 2000, Christoph Hellwig <hch@infradead.org>
 # Rewritten to use lists instead of if-statements.
