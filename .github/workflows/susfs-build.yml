@@ -1,5 +1,5 @@
 name: N971N KernelSU Next + SUSFS 1.5.12
-run-name: "N971N d1xks KSUN + SUSFS minimal boot isolation"
+run-name: "N971N d1xks KSUN + SUSFS 1.5.12 (init on, features off)"
 
 on:
   push:
@@ -31,15 +31,20 @@ jobs:
             python3 python-is-python3 zip curl cpio rsync device-tree-compiler \
             git lz4 zlib1g-dev
 
-      - name: Prepare official KernelSU-Next legacy driver
+      - name: Prepare exact known-good KernelSU-Next legacy driver
         shell: bash
         run: |
           set -euo pipefail
           chmod +x scripts/prepare-ksu-variant.sh
-          bash scripts/prepare-ksu-variant.sh ksun legacy
+          bash scripts/prepare-ksu-variant.sh ksun b933b1f728116a456fbebf27b6a8772a640cdf23
           grep -q 'KernelSU-Next/KernelSU-Next.git' build/ksu-source-info.txt
-          test -L drivers/kernelsu
-          test "$(readlink drivers/kernelsu)" = "../ksu-src/ksun/kernel"
+          grep -q 'commit=b933b1f728116a456fbebf27b6a8772a640cdf23' build/ksu-source-info.txt
+          grep -q '^CONFIG_KSU=y$' arch/arm64/configs/ksu.config
+          grep -q '^CONFIG_KSU_SUSFS=y$' arch/arm64/configs/ksu.config
+          if grep -Eq '^CONFIG_KSU_SUSFS_[A-Z0-9_]+=y$' arch/arm64/configs/ksu.config; then
+            echo "ERROR: a SUSFS runtime feature is enabled in the prepared config"
+            exit 1
+          fi
 
       - name: Apply SUSFS v1.5.12 for Linux 4.14.113 + KernelSU-Next
         shell: bash
@@ -47,25 +52,17 @@ jobs:
           set -euo pipefail
           chmod +x apply-susfs.sh build.sh
           bash apply-susfs.sh
-
-      - name: Isolate SUSFS initialization for boot test
-        shell: bash
-        run: |
-          set -euo pipefail
           INIT_FILE="ksu-src/ksun/kernel/core/init.c"
           test -s "$INIT_FILE"
-          COUNT=$(grep -c 'susfs_init();' "$INIT_FILE" || true)
-          test "$COUNT" -eq 1
-          sed -i '/susfs_init();/d' "$INIT_FILE"
-          ! grep -q 'susfs_init();' "$INIT_FILE"
-          echo "[ISOLATION] SUSFS code remains compiled, but its init hook is disabled for this boot-only diagnostic."
+          grep -q 'susfs_init();' "$INIT_FILE"
+          echo "[SUSFS] v1.5.12 init hook is present and will remain enabled."
 
-      - name: Build N971N d1xks kernel and flashable ZIP
+      - name: Build N971N d1xks SUSFS feature-isolation ZIP
         shell: bash
         run: |
           set -euo pipefail
           # Keep LOCALVERSION below Linux's 64-character utsrelease limit.
-          bash build.sh -m d1xks -v N971N-KSUN-SUSFS-MIN -k y -l 13 -r y
+          bash build.sh -m d1xks -v N971N-KSUN-SUSFS-OFF -k y -l 13 -r y
 
       - name: Collect flashable ZIP for verification
         shell: bash
@@ -107,7 +104,7 @@ jobs:
             unzip -p "$z" META-INF/com/google/android/updater-script 2>/dev/null | grep -nE 'N971|d1xks|binary|boot' | head -40 || true
           done
 
-      - name: Verify kernel configuration and package
+      - name: Verify SUSFS core-only config and flashable package
         shell: bash
         run: |
           set -euxo pipefail
@@ -116,8 +113,15 @@ jobs:
           grep -q '^CONFIG_KSU=y$' out/.config
           grep -q '^CONFIG_KSU_MANUAL_HOOK=y$' out/.config
           grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
+          if grep -Eq '^CONFIG_KSU_SUSFS_[A-Z0-9_]+=y$' out/.config; then
+            echo "ERROR: SUSFS runtime feature unexpectedly enabled in final .config"
+            grep -E '^CONFIG_KSU_SUSFS_[A-Z0-9_]+=y$' out/.config
+            exit 1
+          fi
           grep -q 'SUSFS_VERSION "v1.5.12"' include/linux/susfs.h
+          grep -q 'susfs_init();' ksu-src/ksun/kernel/core/init.c
           test -s build/ksu-source-info.txt
+          grep -q 'commit=b933b1f728116a456fbebf27b6a8772a640cdf23' build/ksu-source-info.txt
           test -d build/export
           ZIP_COUNT=$(find build/export -maxdepth 1 -type f -name '*.zip' | wc -l)
           test "$ZIP_COUNT" -ge 1
@@ -131,13 +135,13 @@ jobs:
             unzip -Z1 "$z" | grep -qx 'META-INF/com/google/android/updater-script'
           done
           (cd build/export && sha256sum *.zip > SHA256SUMS)
-          echo "KernelSU Next + SUSFS config verified:"
+          echo "KernelSU Next + SUSFS v1.5.12 core-only config verified:"
           grep -E '^CONFIG_KSU(=|_)' out/.config
 
       - name: Upload kernel ZIP and build metadata
         uses: actions/upload-artifact@v4
         with:
-          name: N971N-KSUN-SUSFS-MINIMAL-${{ github.run_number }}
+          name: N971N-KSUN-SUSFS-FEATURES-OFF-${{ github.run_number }}
           path: |
             build/export/*.zip
             build/export/ksu-source-info.txt
