@@ -467,7 +467,16 @@ kernelsu ()
         fi
 
         git submodule add -f -q https://github.com/sidex15/KernelSU-Next > /dev/null
-        bash <(curl -fLSs "https://raw.githubusercontent.com/sidex15/KernelSU-Next/refs/heads/next-susfs_v1.5.5-v1.5.7/kernel/setup.sh") next-susfs_v1.5.5-v1.5.7
+        KSU_BRANCH="next-susfs_v1.5.5-v1.5.7"
+        quotes "Fetching pinned KernelSU Next branch: $KSU_BRANCH"
+        git -C KernelSU-Next fetch --depth=1 origin "refs/heads/$KSU_BRANCH" || abort
+        git -C KernelSU-Next checkout --detach FETCH_HEAD || abort
+        test -f KernelSU-Next/kernel/Makefile || abort
+        test -f KernelSU-Next/kernel/Kconfig || abort
+        quotes "KernelSU Next commit: $(git -C KernelSU-Next rev-parse --short HEAD)"
+        ln -sf "$(realpath --relative-to=drivers KernelSU-Next/kernel)" drivers/kernelsu || abort
+        grep -qF 'obj-$(CONFIG_KSU) += kernelsu/' drivers/Makefile || printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+        grep -qF 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || sed -i '/^endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
         separator
         check "KernelSU Next"
     fi
