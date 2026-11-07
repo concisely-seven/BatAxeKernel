@@ -73,7 +73,6 @@
 #include <trace/events/sched.h>
 
 #ifdef CONFIG_KSU
-#include <ksu_hook.h>
 #endif
 
 #ifdef CONFIG_SECURITY_DEFEX
