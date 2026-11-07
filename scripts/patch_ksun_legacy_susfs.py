@@ -180,6 +180,10 @@ legacy_guard = "#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)) || (defined
 if state_guard in h:
     h = h.replace(state_guard, legacy_guard, 1)
     selinux_h.write_text(h)
+elif "#ifndef KSU_COMPAT_USE_SELINUX_STATE" in h:
+    # Newer KSUN compatibility header: with this macro absent, it selects
+    # the legacy SELinux headers/API. That is the correct path for Linux 4.14.
+    pass
 elif legacy_guard not in h:
     raise SystemExit("legacy-SUSFS bridge: SELinux state compatibility guard not found")
 
