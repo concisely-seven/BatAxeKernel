@@ -1,5 +1,5 @@
 name: Build (CI)
-run-name: 'CI: Build ${{ github.event.inputs.version }} for device ${{ github.event.inputs.devices }}'
+run-name: 'Se7enKernel oG-SUSFS d1xks / Clang 13'
 
 on:
   push:
@@ -45,13 +45,44 @@ jobs:
           echo BUILD_DATE=$(date +'%Y%m%d') >> $GITHUB_ENV
           echo BUILD_KERNEL_VERSION=oG-SUSFS >> $GITHUB_ENV
           
-      - name: Building Kernel
+      - name: Building Kernel and verifying ZIP
+        shell: bash
         run: |
-            bash build.sh -m ${{ matrix.device }} -v oG-SUSFS -l 13 -r y
+          set -eo pipefail
+          LLVM=13 bash build.sh -m d1xks -v oG-SUSFS -l 13 -r y
+
+          mkdir -p artifacts
+          mapfile -t ZIP_FILES < <(find build -type f -name '*.zip' ! -name 'module.zip' ! -path '*/toolchain/*' | sort)
+          if (( ${#ZIP_FILES[@]} == 0 )); then
+            echo "ERROR: build.sh reported success but produced no flashable ZIP."
+            echo "Files under build/export:"
+            find build/export -maxdepth 2 -type f -print 2>/dev/null || true
+            echo "ZIP files under build:"
+            find build -type f -name '*.zip' -print
+            exit 1
+          fi
+
+          for file in "${ZIP_FILES[@]}"; do
+            cp -f "$file" "artifacts/$(basename "$file")"
+          done
+
+          shopt -s nullglob
+          PACKAGES=(artifacts/*.zip)
+          if (( ${#PACKAGES[@]} == 0 )); then
+            echo "ERROR: artifact staging directory is empty."
+            exit 1
+          fi
+          for package in "${PACKAGES[@]}"; do
+            echo "Validating $package"
+            unzip -t "$package"
+          done
+          sha256sum "${PACKAGES[@]}" > artifacts/SHA256SUMS
 
       - name: Upload Kernel
         uses: actions/upload-artifact@v4
         with:
           name: "Se7enKernel-oG-SUSFS-d1xks-${{ env.BUILD_DATE }}-Clang13"
-          path: "build/export/*.zip"
+          path: |
+            artifacts/*.zip
+            artifacts/SHA256SUMS
           if-no-files-found: error
