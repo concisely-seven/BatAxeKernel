@@ -96,7 +96,7 @@ detect_env() {
     DATE=`date +"%Y%m%d"`
     BUILD_URL="https://raw.githubusercontent.com/papaL3xa/builds/refs/heads/exynos9820/"
     REPO_URL="https://raw.githubusercontent.com/ivanmeler/android_kernel_samsung_beyondlte/refs/heads/oneui5_beyond/" 
-    KERNEL_NAME=SeVenkernel-rkSU-Susfs
+    KERNEL_NAME=SeVenkernel-ksun-Susfs
     export KBUILD_BUILD_USER=SeVenkernel
     export KBUILD_BUILD_HOST=SeVenkernel
 
@@ -434,16 +434,22 @@ setup_clang_environment() {
 
 kernelsu() {
     separator
+    quotes "Install the exact KernelSU Next source used by papaL3xa/BatAxeKernel #1.5.12"
+    KSU_NEXT_DIR="$PWD/KernelSU-Next"
+    rm -rf "$KSU_NEXT_DIR"
+    git clone --filter=blob:none https://github.com/GoRhanHee/KernelSU-Next.git "$KSU_NEXT_DIR" || abort
+    git -C "$KSU_NEXT_DIR" checkout --detach 9a1a643788f7927c7ccdeeaa51e0d19d0ee1c4e2 || abort
+    test -f "$KSU_NEXT_DIR/kernel/Kconfig" || abort
+    test -f "$KSU_NEXT_DIR/kernel/Makefile" || abort
 
-    # Setup KernelSU Next
-    if ! test -d "drivers/kernelsu"; then
-        quotes "Initialize the pinned KernelSU submodule (never update to remote HEAD)"
-        separator
-        git submodule update --init --recursive KernelSU
-    fi
+    rm -f drivers/kernelsu
+    ln -s ../KernelSU-Next/kernel drivers/kernelsu
+    test -L drivers/kernelsu || abort
+    test "$(readlink drivers/kernelsu)" = "../KernelSU-Next/kernel" || abort
 
-    # Apply SUSFS 1.5.12 while preserving the exact KernelSU submodule commit
-    bash ./apply-susfs.sh
+    # Apply only the Linux 4.14 SUSFS kernel layer; upstream KSUN has its own SUSFS Kconfig.
+    bash ./apply-susfs-ksun.sh || abort
+    quotes "KernelSU Next pinned commit: $(git -C "$KSU_NEXT_DIR" rev-parse HEAD)"
 }
 
 # =============================================================================
@@ -496,7 +502,7 @@ kernel() {
 
 # Fungsi untuk update konfigurasi kernel
 update_kernel_config() {
-    sed -i "s/CONFIG_LOCALVERSION=\"\"/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-$MODEL-$KERNEL_VERSION\"/" arch/arm64/configs/$KERNEL_DEFCONFIG
+    sed -i "s/CONFIG_LOCALVERSION=\"\"/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-$MODEL\"/" arch/arm64/configs/$KERNEL_DEFCONFIG
     sed -i "s/CONFIG_LOCALVERSION_AUTO=y/CONFIG_LOCALVERSION_AUTO=n/" arch/arm64/configs/$KERNEL_DEFCONFIG
 }
 
