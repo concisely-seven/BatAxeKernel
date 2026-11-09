@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   build-d1xks:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     steps:
       - name: Checkout exact source and pinned submodules
@@ -37,6 +37,9 @@ jobs:
             exit 1
           fi
 
+      - name: Fetch complete KernelSU-Next history and tags
+        run: git -C KernelSU-Next fetch --unshallow --tags
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -50,6 +53,7 @@ jobs:
           set -o pipefail
           chmod +x build.sh
           bash build.sh -m d1xks -v KSUN-pinned-c380093 -k y -l 10032024 -r y 2>&1 | tee build-ci.log
+          test -n "$(find build/export -maxdepth 1 -type f -name '*.zip' -print -quit)"
 
       - name: Upload flashable kernel ZIP
         uses: actions/upload-artifact@v4
