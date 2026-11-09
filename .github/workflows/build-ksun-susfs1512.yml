@@ -1,0 +1,103 @@
+name: Build N971N Binary2 KernelSU Next + SUSFS 1.5.12
+run-name: "SeVenkernel KSUN SUSFS1512 - d1xks - Clang 13"
+
+on:
+  push:
+    branches:
+      - KSUN-susfs1512
+    paths:
+      - 'build.sh'
+      - 'apply-susfs-ksun.sh'
+      - 'scripts/patch_ksun_legacy_susfs.py'
+      - '.github/workflows/build-ksun-susfs1512.yml'
+      - 'arch/arm64/configs/**'
+      - 'drivers/**'
+      - 'fs/**'
+      - 'include/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout Run #5 baseline and KSUN submodule
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Verify KSUN submodule origin
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'url = https://github.com/GoRhanHee/KernelSU-Next.git' .gitmodules
+          test -d KernelSU-Next
+          echo "KernelSU Next fork path verified."
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gcc-aarch64-linux-gnu clang lld llvm \
+            bc bison flex libssl-dev libelf-dev libncurses-dev \
+            python3 python-is-python3 zip curl cpio rsync device-tree-compiler
+
+      - name: Build N971N Binary2 KernelSU Next kernel with Clang 13
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x build.sh
+          bash build.sh -m d1xks -v B2-KSUN-SUSFS1512 -k y -l 13 -r y
+
+      - name: Verify KSUN, SUSFS, modules and flashable ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s out/.config
+          for required in \
+            CONFIG_KSU=y \
+            CONFIG_KSU_MANUAL_HOOK=y \
+            CONFIG_KSU_SUSFS=y \
+            CONFIG_KSU_SUSFS_SUS_PATH=y \
+            CONFIG_KSU_SUSFS_SUS_MOUNT=y \
+            CONFIG_KSU_SUSFS_SUS_KSTAT=y \
+            CONFIG_KSU_SUSFS_TRY_UMOUNT=y \
+            CONFIG_KSU_SUSFS_SPOOF_UNAME=y \
+            CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y \
+            CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y \
+            CONFIG_KSU_SUSFS_OPEN_REDIRECT=y \
+            CONFIG_KSU_SUSFS_SUS_MAP=y \
+            CONFIG_MODULES=y \
+            CONFIG_OVERLAY_FS=y; do
+            grep -qx "$required" out/.config || { echo "Missing config: $required"; exit 1; }
+          done
+          test -s out/vmlinux
+          test -s out/arch/arm64/boot/Image
+          shopt -s nullglob
+          zips=(build/export/*.zip)
+          test "${#zips[@]}" -eq 1
+          unzip -t "${zips[0]}"
+          for entry in boot.img dtb.img dtbo.img module.zip; do
+            unzip -Z1 "${zips[0]}" | grep -qx "$entry"
+          done
+          echo "KernelSU Next config and ZIP structure verified."
+
+      - name: Upload flashable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: SeVenkernel-KSUN-Susfs-d1xks-${{ github.run_number }}-Clang13
+          path: build/export/*.zip
+          if-no-files-found: error
+          compression-level: 9
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SeVenkernel-KSUN-SUSFS1512-build-log
+          path: build.log
+          if-no-files-found: ignore
