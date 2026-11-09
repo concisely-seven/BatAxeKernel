@@ -1,0 +1,62 @@
+name: Build d1xks pinned KernelSU-Next
+
+on:
+  push:
+    branches:
+      - d1xks-board-SRPSD26B008KU-pinned-ksun
+    paths:
+      - '.github/workflows/build-d1xks-pinned.yml'
+      - 'build.sh'
+      - 'arch/arm64/configs/**'
+      - '.gitmodules'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-d1xks:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout exact source and pinned submodules
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Verify pinned KernelSU-Next revision
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git rev-parse HEAD
+          git submodule status --recursive
+          test "$(git -C KernelSU-Next rev-parse HEAD)" = "c380093e37f6e9c12b580ee348def4d4b53543de"
+          if git -C KernelSU-Next grep -n 'TWA_RESUME' HEAD -- kernel/allowlist.c; then
+            echo "Unexpected newer task_work API in pinned KSUN source"
+            exit 1
+          fi
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bc bison build-essential ccache curl flex gcc-aarch64-linux-gnu git libssl-dev lld llvm make python3 rsync unzip zip
+
+      - name: Build Note10 5G d1xks kernel
+        shell: bash
+        env:
+          TZ: Asia/Jakarta
+        run: |
+          set -o pipefail
+          chmod +x build.sh
+          bash build.sh -m d1xks -v KSUN-pinned-c380093 -k y -l 10032024 -r y 2>&1 | tee build-ci.log
+
+      - name: Upload flashable kernel ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: BatAxeKernel-d1xks-KSUN-pinned-c380093
+          path: |
+            build/export/*.zip
+            build-ci.log
+          if-no-files-found: error
+          retention-days: 14
