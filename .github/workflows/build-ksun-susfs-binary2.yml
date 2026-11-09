@@ -1,0 +1,87 @@
+name: Build N971N Binary2 KSUN + SUSFS 1.5.12
+run-name: "SeVenkernel KSUN SUSFS - d1xks - Clang 13"
+
+on:
+  push:
+    branches:
+      - KSUN-SUSFS-Binary2-d1xks
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout Binary2 RKSU known-bootable baseline
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential gcc-aarch64-linux-gnu clang lld llvm \
+            bc bison flex libssl-dev libelf-dev libncurses-dev \
+            python3 python-is-python3 zip curl cpio rsync device-tree-compiler
+
+      - name: Verify d1xks boot image parameters
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -A3 'd1xks)' build.sh | grep -q 'SOC=5'
+          grep -A3 'd1xks)' build.sh | grep -q 'BOARD=SRPSD26B008KU'
+          grep -q 'androidboot.selinux=permissive androidboot.selinux=permissive loop.max_part=7' build.sh
+          grep -q '2099-12' build.sh
+
+      - name: Build N971N Binary2 KernelSU Next + SUSFS 1.5.12 with Clang 13
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x build.sh apply-susfs-ksun.sh
+          bash build.sh -m d1xks -v B2-KSUN-SUSFS1512 -k y -l 13 -r y
+
+      - name: Verify KernelSU, SUSFS, boot parameters and flashable ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s out/.config
+          grep -q '^CONFIG_KSU=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_ENABLE_LOG=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MOUNT=y$' out/.config
+          grep -q '^CONFIG_KSU_SUSFS_SUS_MAP=y$' out/.config
+          grep -q '^CONFIG_OVERLAY_FS=y$' out/.config
+          grep -q '9a1a643788f7927c7ccdeeaa51e0d19d0ee1c4e2' build.log
+          grep -q '^SRPSD26B008KU$' build/AIK/split_img/boot.img-board
+          grep -q 'androidboot.selinux=permissive androidboot.selinux=permissive loop.max_part=7' build/AIK/split_img/boot.img-cmdline
+          grep -q '^2099-12$' build/AIK/split_img/boot.img-os_patch_level
+          shopt -s nullglob
+          zips=(build/export/4.14.113-SeVenkernel-ksun-Susfs-d1xks.zip)
+          test "${#zips[@]}" -eq 1
+          unzip -t "${zips[0]}"
+          unzip -l "${zips[0]}" | grep -q 'boot.img'
+          unzip -l "${zips[0]}" | grep -q 'dtb.img'
+          unzip -l "${zips[0]}" | grep -q 'dtbo.img'
+          unzip -l "${zips[0]}" | grep -q 'module.zip'
+          echo "KSUN + SUSFS config, boot image metadata and ZIP integrity verified."
+
+      - name: Upload flashable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: 4.14.113-SeVenkernel-ksun-Susfs-d1xks
+          path: build/export/4.14.113-SeVenkernel-ksun-Susfs-d1xks.zip
+          if-no-files-found: error
+          compression-level: 9
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SeVenkernel-KSUN-SUSFS-Binary2-build-log
+          path: build.log
+          if-no-files-found: ignore
