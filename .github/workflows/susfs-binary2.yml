@@ -1,10 +1,10 @@
-name: Build N971N Binary2 KSUN + SUSFS 1.5.12
-run-name: "N971N Binary2 KSUN SUSFS 1.5.12 - Clang 13"
+name: Build N971N Binary2 KernelSU Next 3.4 + SUSFS 1.5.12
+run-name: "d1xks KSUN 3.4 Binary2 - Clang 13"
 
 on:
   push:
     branches:
-      - kernelsu-next-susfs-1.5.12-binary2
+      - KSUN-3.4-d1xks
   workflow_dispatch:
 
 permissions:
@@ -15,18 +15,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
-      - name: Checkout known-good base with pinned submodules
+      - name: Checkout KSUN 3.4 d1xks branch with submodules
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
           submodules: true
 
-      - name: Verify the known-good KernelSU revision
+      - name: Verify KernelSU Next pin and d1xks boot parameters
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C KernelSU rev-parse HEAD)" = "88e37d606fc12758421c3e36b0f61499610cfe8d"
-          echo "Pinned KernelSU source verified."
+          grep -Fq 'url = https://github.com/GoRhanHee/KernelSU-Next.git' .gitmodules
+          grep -Fq 'KSU_COMMIT="362b2cd85d1b8a3d95698399876b1dddee243df8"' build.sh
+          grep -Fq 'KSU_BRANCH="legacy-susfs"' build.sh
+          python3 - <<'PY'
+          from pathlib import Path
+          s = Path("build.sh").read_text()
+          model = s.split("d1xks)", 1)[1].split(";;", 1)[0]
+          assert "SOC=5" in model, model
+          assert "BOARD=SRPSD26B008KU" in model, model
+          boot = s.split("setup_boot_image_components() {", 1)[1].split("\n}", 1)[0]
+          assert 'echo -e $BOARD > boot.img-board' in boot
+          assert 'androidboot.selinux=permissive androidboot.selinux=permissive loop.max_part=7' in boot
+          assert 'echo -e "2099-12" > boot.img-os_patch_level' in boot
+          print("KernelSU-Next source pin and all requested d1xks boot parameters verified.")
+          PY
 
       - name: Install build dependencies
         run: |
@@ -36,14 +49,14 @@ jobs:
             bc bison flex libssl-dev libelf-dev libncurses-dev \
             python3 python-is-python3 zip curl cpio rsync device-tree-compiler
 
-      - name: Build N971N Binary2 kernel with Clang 13
+      - name: Build d1xks KernelSU Next 3.4 kernel with Clang 13
         shell: bash
         run: |
           set -euo pipefail
           chmod +x build.sh
-          bash build.sh -m d1xks -v B2-KSUN-SFS512 -k y -l 13 -r y
+          bash build.sh -m d1xks -v KSUN-3.4-B2-SUSFS1512 -k y -l 13 -r y
 
-      - name: Verify generated flashable ZIP
+      - name: Verify flashable ZIP and Binary2 installer metadata
         shell: bash
         run: |
           set -euo pipefail
@@ -51,18 +64,21 @@ jobs:
           zips=(build/export/*.zip)
           test "${#zips[@]}" -eq 1
           unzip -t "${zips[0]}"
+          unzip -l "${zips[0]}" | grep -q 'boot.img'
+          unzip -l "${zips[0]}" | grep -q 'dtb.img'
+          unzip -l "${zips[0]}" | grep -q 'dtbo.img'
+          unzip -l "${zips[0]}" | grep -q 'module.zip'
           unzip -p "${zips[0]}" META-INF/com/google/android/updater-script > /tmp/updater-script
           if grep -Eiq 'Binary 7|Binaries Support: 7|Binary 8|Binary 9' /tmp/updater-script; then
-            echo "FATAL: updater script still contains Binary 7/8/9-only restriction"
+            echo "FATAL: installer contains Binary 7/8/9-only restriction"
             exit 1
           fi
-          grep -q 'N971N' /tmp/updater-script || true
-          echo "Flashable ZIP archive integrity verified."
+          echo "Flashable ZIP integrity and Binary2 compatibility checks passed."
 
       - name: Upload flashable ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: BatAxeKernel-d1xks-Binary2-KSUN-SUSFS-1.5.12-Clang13
+          name: SeVenkernel-KSUN-3.4-SUSFS1512-d1xks-Clang13
           path: build/export/*.zip
           if-no-files-found: error
           compression-level: 9
@@ -71,6 +87,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: BatAxeKernel-Binary2-SUSFS-1.5.12-build-log
+          name: KSUN-3.4-SUSFS1512-d1xks-build-log
           path: build.log
           if-no-files-found: ignore
