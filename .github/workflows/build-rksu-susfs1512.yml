@@ -65,7 +65,7 @@ jobs:
           unzip -l "${zips[0]}" | grep -q 'dtbo.img'
           unzip -l "${zips[0]}" | grep -q 'module.zip'
           name="$(basename "${zips[0]}")"
-          [[ "$name" == SeVenkernel-rkSU-Susfs-d1xks-* ]]
+          [[ "$name" == SeVenkernel-RKSU-SUSFS-d1xks-* ]]
           unzip -p "${zips[0]}" META-INF/com/google/android/updater-script > /tmp/updater-script
           ! grep -Eiq 'Binary 7|Binaries Support: 7|Binary 8|Binary 9' /tmp/updater-script
           echo "ZIP integrity and SeVenkernel RKSU naming verified."
@@ -73,7 +73,7 @@ jobs:
       - name: Upload flashable ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: SeVenkernel-rkSU-Susfs-d1xks-${{ github.run_number }}-Clang13
+          name: SeVenkernel-RKSU-SUSFS-d1xks-${{ github.run_number }}-Clang13
           path: build/export/*.zip
           if-no-files-found: error
           compression-level: 9
