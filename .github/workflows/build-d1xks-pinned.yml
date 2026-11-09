@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - d1xks-board-SRPSD26B008KU-clang13-ksun-pinned
+      - d1xks-Se7enKernel-KSUN-Note10-d1xks
     paths:
       - '.github/workflows/build-d1xks-pinned.yml'
       - 'build.sh'
