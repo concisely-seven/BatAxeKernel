@@ -671,7 +671,7 @@ create_final_zip() {
     if [[ "$LOCAL" == "y" ]] || [[ "$RELEASE" == "y" ]]; then
         sed -i "s/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-\"$MODEL\"-$KERNEL_VERSION\"/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-\"$MODEL\"-$KERNEL_VERSION-\"$DATE\"-$DEVICE-$KERNELCLANG\"/" arch/arm64/configs/$KERNEL_DEFCONFIG
         NAME=$(grep -o 'CONFIG_LOCALVERSION="[^"]*"' arch/arm64/configs/$KERNEL_DEFCONFIG | cut -d '"' -f 2)
-        NAME=${NAME:1}.zip
+        NAME="4.14.113-${NAME:1}.zip"
         pushd build/out/$MODEL/zip > /dev/null
         zip -r ../"$NAME" .
         popd > /dev/null
