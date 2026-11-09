@@ -831,6 +831,9 @@ setup_model() {
 # =============================================================================
 
 main() {
+    # Propagate failures from the build subshell through tee.
+    set -o pipefail
+
     # Setup logging
     rm -rf ./build.log
     
