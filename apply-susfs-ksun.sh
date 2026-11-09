@@ -19,7 +19,10 @@ else
     echo "[SUSFS][FATAL] Existing SUSFS files found but version is not v1.5.12"
     exit 1
   fi
-  patch --batch --forward -p1 -F3 -d "$ROOT" < "$TMP_DIR/susfs-kernel-1.5.12.patch" || PATCH_STATUS=$?\n  (cd "$ROOT" && python3 scripts/repair_susfs_414_patch.py)
+  if ! patch --batch --forward -p1 -F3 -d "$ROOT" < "$TMP_DIR/susfs-kernel-1.5.12.patch"; then
+    echo "[SUSFS] Upstream patch had expected Linux 4.14 context rejects; running compatibility repair"
+  fi
+  (cd "$ROOT" && python3 scripts/repair_susfs_414_patch.py)
 fi
 
 mkdir -p "$ROOT/include/linux"
