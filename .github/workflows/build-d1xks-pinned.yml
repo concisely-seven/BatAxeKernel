@@ -22,7 +22,7 @@ jobs:
       - name: Checkout exact source and pinned submodules
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           submodules: recursive
 
       - name: Verify pinned KernelSU-Next revision
