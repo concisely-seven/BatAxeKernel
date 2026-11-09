@@ -3,7 +3,7 @@ name: Build d1xks pinned KernelSU-Next
 on:
   push:
     branches:
-      - d1xks-board-SRPSD26B008KU-pinned-ksun
+      - d1xks-board-SRPSD26B008KU-clang13-ksun-pinned
     paths:
       - '.github/workflows/build-d1xks-pinned.yml'
       - 'build.sh'
