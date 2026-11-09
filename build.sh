@@ -439,7 +439,7 @@ kernelsu() {
     if ! test -d "drivers/kernelsu"; then
         quotes "Update KernelSU Next as Submodule"
         separator
-        git submodule init && git submodule update --remote
+        git submodule init && git submodule update -f -q --init --recursive
     fi
 }
 
