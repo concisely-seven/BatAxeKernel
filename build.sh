@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -o pipefail
+
 # =============================================================================
 # KERNEL BUILD SCRIPT FOR EXYNOS 9820 DEVICES
 # Script ini digunakan untuk mengkompilasi kernel Android untuk perangkat Samsung Exynos 9820
@@ -96,9 +98,9 @@ detect_env() {
     DATE=`date +"%Y%m%d"`
     BUILD_URL="https://raw.githubusercontent.com/papaL3xa/builds/refs/heads/exynos9820/"
     REPO_URL="https://raw.githubusercontent.com/ivanmeler/android_kernel_samsung_beyondlte/refs/heads/oneui5_beyond/" 
-    KERNEL_NAME=BatAxeKernel
-    export KBUILD_BUILD_USER=papaL3xa
-    export KBUILD_BUILD_HOST=BatAxeKernel
+    KERNEL_NAME=SeVenkernel-KSUN-Susfs
+    export KBUILD_BUILD_USER=SeVenkernel
+    export KBUILD_BUILD_HOST=SeVenkernel
 
     # Tentukan device berdasarkan SOC
     if [[ "$SOC" == "5" ]]; then
@@ -434,16 +436,71 @@ setup_clang_environment() {
 
 kernelsu() {
     separator
+    quotes "Setting up KernelSU Next legacy-SUSFS integration"
+    bash ./apply-susfs-ksun.sh || abort
 
-    # Setup KernelSU Next
-    if ! test -d "drivers/kernelsu"; then
-        quotes "Initialize the pinned KernelSU submodule (never update to remote HEAD)"
-        separator
-        git submodule update --init --recursive KernelSU
+    # Keep the tested GoRhanHee fork, but pin an explicit source revision.
+    # legacy-susfs contains compatibility paths for pre-4.18 fsnotify APIs,
+    # and manual hooks intended for older non-GKI kernels such as this 4.14 tree.
+    git submodule init
+    git submodule update --init --recursive
+
+    if ! test -f "KernelSU-Next/kernel/Kconfig" || ! test -f "KernelSU-Next/kernel/Makefile"; then
+        quotes "ERROR: KernelSU-Next kernel source is missing"
+        abort
     fi
 
-    # Apply SUSFS 1.5.12 while preserving the exact KernelSU submodule commit
-    bash ./apply-susfs.sh
+    KSU_BRANCH="legacy-susfs"
+    KSU_COMMIT="362b2cd85d1b8a3d95698399876b1dddee243df8"
+
+    if [ "$(git -C KernelSU-Next rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+        quotes "Unshallowing KernelSU-Next history for correct KSU version code"
+        git -C KernelSU-Next fetch --unshallow origin || abort
+    fi
+
+    quotes "Fetching pinned KernelSU Next branch: $KSU_BRANCH"
+    git -C KernelSU-Next fetch origin "refs/heads/$KSU_BRANCH" || abort
+    git -C KernelSU-Next checkout --detach "$KSU_COMMIT" || abort
+
+    if [ "$(git -C KernelSU-Next rev-parse HEAD)" != "$KSU_COMMIT" ]; then
+        quotes "ERROR: KernelSU Next commit pin verification failed"
+        abort
+    fi
+
+    # Bridge the new KSUN source to this kernel tree's SUSFS v1.5.12 prctl ABI.
+    # The pinned KSUN revision carries the v2.0 reboot ABI, while this kernel
+    # intentionally retains the known-good v1.5.12 SUSFS implementation.
+    quotes "Applying legacy SUSFS v1.5.12 prctl bridge"
+    python3 scripts/patch_ksun_legacy_susfs.py || abort
+
+    # Guard the exact compatibility mechanisms expected by Linux 4.14.
+    grep -q "ksu_handle_susfs_prctl" KernelSU-Next/kernel/supercalls.c || abort
+    grep -q "LSM_HOOK_INIT(task_prctl, ksu_task_prctl)" KernelSU-Next/kernel/lsm_hooks.c || abort
+    grep -q "KSU_DECL_FSNOTIFY_OPS" KernelSU-Next/kernel/pkg_observer.c || abort
+    grep -q "KERNEL_VERSION(4, 12, 0)" KernelSU-Next/kernel/pkg_observer.c || abort
+    grep -q "KSU_MANUAL_HOOK" KernelSU-Next/kernel/Kconfig || abort
+    grep -q "ksu_handle_faccessat" fs/open.c || abort
+
+    # This revision already selects the legacy fsnotify callback and mark API
+    # for Linux 4.14. Do not apply the older observer rewrite used by v1.5.12.
+    ln -sfn ../KernelSU-Next/kernel drivers/kernelsu
+
+    if ! test -L "drivers/kernelsu" || ! test -f "drivers/kernelsu/Kconfig"; then
+        quotes "ERROR: drivers/kernelsu integration symlink is invalid"
+        abort
+    fi
+
+    if ! grep -qE '^[[:space:]]*obj-\$\(CONFIG_KSU\)[[:space:]]*\+=[[:space:]]*kernelsu/' drivers/Makefile; then
+        printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> drivers/Makefile
+    fi
+
+    if ! grep -qF 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig; then
+        sed -i '/^endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+    fi
+
+    quotes "KernelSU Next commit: $(git -C KernelSU-Next rev-parse --short HEAD)"
+    separator
+    check "KernelSU Next legacy-SUSFS integration"
 }
 
 # =============================================================================
@@ -461,7 +518,7 @@ kernel() {
     noquotes "Kernel Version: $KERNEL_VERSION"
     noquotes "Build Date: `date +"%Y-%m-%d"`"
 
-    if [ -z "$KSU_NEXT" ]; then
+    if [ -z $KSU_NEXT ]; then
         noquotes "KernelSU Next with SuSFS: Not Include"
     else
         noquotes "KernelSU Next with SuSFS: Include (Using $KSU_NEXT)"
@@ -470,14 +527,52 @@ kernel() {
     # Update kernel configuration
     update_kernel_config
 
-    DEFCONFIG="$KERNEL_DEFCONFIG bataxe.config $KSU_NEXT"
-
     separator
     noquotes "Building Kernel Using $KERNEL_DEFCONFIG"
-    quotes "Generating Configuration Files"
+    quotes "Merging device, BatAxeKernel and KernelSU Next configs"
     separator
 
-    make -j$(nproc --all) $ARGS $DEFCONFIG || abort
+    test -x scripts/kconfig/merge_config.sh || {
+        quotes "ERROR: scripts/kconfig/merge_config.sh is missing"
+        abort
+    }
+    test -f "arch/arm64/configs/$KERNEL_DEFCONFIG" || abort
+    test -f arch/arm64/configs/bataxe.config || abort
+    test -f "arch/arm64/configs/$KSU_NEXT" || abort
+
+    mkdir -p out
+    ARCH=arm64 scripts/kconfig/merge_config.sh -m -O out \
+        "arch/arm64/configs/$KERNEL_DEFCONFIG" \
+        arch/arm64/configs/bataxe.config \
+        "arch/arm64/configs/$KSU_NEXT" || abort
+
+    make -j$(nproc --all) $ARGS olddefconfig || abort
+
+    # Do not package a kernel if KSU, manual hooks, SUSFS, or module support
+    # was silently dropped by Kconfig dependency resolution.
+    for required in \
+        CONFIG_KSU=y \
+        CONFIG_KSU_MANUAL_HOOK=y \
+        CONFIG_KSU_SUSFS=y \
+        CONFIG_KSU_SUSFS_SUS_PATH=y \
+        CONFIG_KSU_SUSFS_SUS_MOUNT=y \
+        CONFIG_KSU_SUSFS_SUS_KSTAT=y \
+        CONFIG_KSU_SUSFS_TRY_UMOUNT=y \
+        CONFIG_KSU_SUSFS_SPOOF_UNAME=y \
+        CONFIG_KSU_SUSFS_ENABLE_LOG=y \
+        CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y \
+        CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y \
+        CONFIG_KSU_SUSFS_OPEN_REDIRECT=y \
+        CONFIG_KSU_SUSFS_SUS_MAP=y \
+        CONFIG_MODULES=y \
+        CONFIG_OVERLAY_FS=y; do
+        if ! grep -qx "$required" out/.config; then
+            echo "[CONFIG][FATAL] Required option missing: $required"
+            grep -E '^(CONFIG_(KSU|MODULES|OVERLAY_FS)|# CONFIG_(KSU|MODULES|OVERLAY_FS))' out/.config || true
+            abort
+        fi
+    done
+    echo "[CONFIG] KernelSU Next legacy + SUSFS 1.5.12 configuration verified"
 
     separator
     quotes "Building Kernel"
@@ -496,7 +591,7 @@ kernel() {
 
 # Fungsi untuk update konfigurasi kernel
 update_kernel_config() {
-    sed -i "s/CONFIG_LOCALVERSION=\"\"/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-$KERNEL_VERSION-$DEVICE-$MODEL\"/" arch/arm64/configs/$KERNEL_DEFCONFIG
+    sed -i "s/CONFIG_LOCALVERSION=\"\"/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-$MODEL-$KERNEL_VERSION\"/" arch/arm64/configs/$KERNEL_DEFCONFIG
     sed -i "s/CONFIG_LOCALVERSION_AUTO=y/CONFIG_LOCALVERSION_AUTO=n/" arch/arm64/configs/$KERNEL_DEFCONFIG
 }
 
@@ -663,7 +758,7 @@ update_updater_script() {
 # Fungsi untuk membuat final zip
 create_final_zip() {
     if [[ "$LOCAL" == "y" ]] || [[ "$RELEASE" == "y" ]]; then
-        sed -i "s/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-$KERNEL_VERSION-"$DEVICE"-$MODEL\"/CONFIG_LOCALVERSION=\"-$KERNEL_NAME-$KERNEL_VERSION-"$DATE"-"$DEVICE"-$MODEL-$KERNELCLANG\"/" arch/arm64/configs/$KERNEL_DEFCONFIG
+                sed -i "s/CONFIG_LOCALVERSION=\"$KERNEL_NAME-\"$MODEL\"-$KERNEL_VERSION\"/CONFIG_LOCALVERSION=\"$KERNEL_NAME-\"$MODEL\"-$KERNEL_VERSION-\"$DATE\"-$DEVICE-$KERNELCLANG\"/" arch/arm64/configs/$KERNEL_DEFCONFIG
         NAME=$(grep -o 'CONFIG_LOCALVERSION="[^"]*"' arch/arm64/configs/$KERNEL_DEFCONFIG | cut -d '"' -f 2)
         NAME=${NAME:1}.zip
         pushd build/out/$MODEL/zip > /dev/null
