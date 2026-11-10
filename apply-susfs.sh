@@ -169,7 +169,6 @@ curl -fL --retry 3 "$SUSFS_SOURCE_BASE/fs/susfs.c" -o "$ROOT/fs/susfs.c"
 
 # The pinned rsuntk/susfs-rksu-master commit already contains native
 # KernelSU-SUSFS integration. Do not apply the newer RKSU patch over it:
-grep -q '^config KSU_SUSFS
 grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"
 grep -q '^config KSU_SUSFS$' "$KSU_DIR/kernel/Kconfig"
 test -s "$ROOT/fs/susfs.c"
@@ -180,6 +179,5 @@ for symbol in KSU_SUSFS KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_MAP
   }
 done
 
- "$KSU_DIR/kernel/Kconfig"
 grep -q 'KernelSU-SusFS version' "$KSU_DIR/kernel/Makefile"
 echo "[SUSFS] Native RKSU-SUSFS integration verified at $ACTUAL_KSU_COMMIT"
