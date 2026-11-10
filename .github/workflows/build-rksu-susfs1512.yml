@@ -1,10 +1,10 @@
-name: Build N971N Binary2 RKSU + SUSFS 1.5.12 (Run 8 fix)
-run-name: "SeVenkernel RKSU SUSFS1512 - d1xks - Clang 13 (Run 8 fix)"
+name: Build N971N Binary2 RKSU + SUSFS 2.4.0 (Run 8 fix)
+run-name: "SeVenkernel RKSU SUSFS240 - d1xks - Clang 13 (Run 8 fix)"
 
 on:
   push:
     branches:
-      - RKSU-susfs1512-fix-from-run8
+      - RKSU-susfs240-fix-from-run8
     paths:
       - 'build.sh'
       - 'apply-susfs.sh'
@@ -54,7 +54,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x build.sh
-          bash build.sh -m d1xks -v B2-RKSU-SUSFS1512 -k y -l 13 -r y
+          bash build.sh -m d1xks -v B2-RKSU-SUSFS240 -k y -l 13 -r y
 
       - name: Verify flashable ZIP and build identity
         shell: bash
@@ -86,6 +86,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: SeVenkernel-RKSU-SUSFS1512-build-log
+          name: SeVenkernel-RKSU-SUSFS240-build-log
           path: build.log
           if-no-files-found: ignore
