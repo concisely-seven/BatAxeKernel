@@ -70,68 +70,97 @@ def replace_once(path, old, new, label):
     p.write_text(s.replace(old, new, 1))
     print(f"[SUSFS] {label}: adapted for Run #8 Samsung source")
 
-# namespace.c: Samsung adds fslog.h/slub_def.h between sched/task.h and pnode.h.
+# namespace.c: Samsung adds fslog.h/slub_def.h after sched/task.h.
 p = root / "fs/namespace.c"
 s = p.read_text()
-inc = "#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_TRY_UMOUNT)\\n#include <linux/susfs_def.h>\\n#endif\\n"
-if inc.strip() not in s:
-    anchor = "#include <linux/sched/task.h>\\n"
+if "include <linux/susfs_def.h>" not in s:
+    anchor = "#include <linux/sched/task.h>\n"
     if anchor not in s:
         raise SystemExit("[SUSFS][FATAL] namespace.c include anchor missing")
-    s = s.replace(anchor, anchor + inc, 1)
-    p.write_text(s)
+    inc = "#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_TRY_UMOUNT)\n#include <linux/susfs_def.h>\n#endif\n"
+    p.write_text(s.replace(anchor, anchor + inc, 1))
 
 # cmdline.c: this Samsung tree exposes new_command_line, not saved_command_line.
-replace_once(
-    "fs/proc/cmdline.c",
-    "static int cmdline_proc_show(struct seq_file *m, void *v)\\n{\\n\\tseq_puts(m, new_command_line);",
-    "static int cmdline_proc_show(struct seq_file *m, void *v)\\n{\\n#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\\n\\tif (!susfs_spoof_cmdline_or_bootconfig(m)) {\\n\\t\\tseq_putc(m, '\\n');\\n\\t\\treturn 0;\\n\\t}\\n#endif\\n\\tseq_puts(m, new_command_line);",
-    "cmdline spoof hook"
-)
 p = root / "fs/proc/cmdline.c"
 s = p.read_text()
-decl = "#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\\nextern int susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);\\n#endif\\n"
 if "extern int susfs_spoof_cmdline_or_bootconfig" not in s:
-    anchor = "#include <asm/setup.h>\\n"
+    anchor = "#include <asm/setup.h>\n"
     if anchor not in s:
         raise SystemExit("[SUSFS][FATAL] cmdline.c include anchor missing")
-    p.write_text(s.replace(anchor, anchor + decl, 1))
+    decl = "#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\nextern int susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);\n#endif\n"
+    s = s.replace(anchor, anchor + decl, 1)
+old = """static int cmdline_proc_show(struct seq_file *m, void *v)
+{
+\tseq_puts(m, new_command_line);"""
+new = r"""static int cmdline_proc_show(struct seq_file *m, void *v)
+{
+#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+\tif (!susfs_spoof_cmdline_or_bootconfig(m)) {
+\t\tseq_putc(m, '\n');
+\t\treturn 0;
+\t}
+#endif
+\tseq_puts(m, new_command_line);"""
+if old in s:
+    s = s.replace(old, new, 1)
+elif "susfs_spoof_cmdline_or_bootconfig(m)" not in s:
+    raise SystemExit("[SUSFS][FATAL] cmdline.c show function anchor missing")
+p.write_text(s)
 
-# task_mmu.c: adapt SUS_MAP smaps output to this tree's show_smap() implementation.
+# task_mmu.c: adapt SUS_MAP smaps output to this tree's inline show_smap().
 p = root / "fs/proc/task_mmu.c"
 s = p.read_text()
 if "susfs_run8_smap_compat" not in s:
-    anchor = "\\tif (!rollup_mode)\\n\\t\\tseq_printf(m,\\n\\t\\t\\t   \"Size:           %8lu kB\\n\""
-    if anchor not in s:
-        raise SystemExit("[SUSFS][FATAL] task_mmu.c Size output anchor missing")
-    s = s.replace(anchor,
-        "\\t/* susfs_run8_smap_compat: preserve this tree's inline smaps formatter. */\\n"
-        "#ifdef CONFIG_KSU_SUSFS_SUS_MAP\\n"
-        "\\tif (!rollup_mode && vma->vm_file &&\\n"
-        "\\t    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&\\n"
-        "\\t    susfs_is_current_non_root_user_app_proc()) {\\n"
-        "\\t\\tseq_printf(m, \"Size:           %8lu kB\\nKernelPageSize: %8lu kB\\nMMUPageSize:    %8lu kB\\",\\n"
-        "\\t\\t\\t(vma->vm_end - vma->vm_start) >> 10, 4, 4);\\n"
-        "\\t} else\\n"
-        "#endif\\n" + anchor, 1)
-    old = "\\tif (!rollup_mode) {\\n\\t\\tarch_show_smap(m, vma);\\n\\t\\tshow_smap_vma_flags(m, vma);\\n\\t}"
-    new = "\\tif (!rollup_mode) {\\n"
-        "#ifdef CONFIG_KSU_SUSFS_SUS_MAP\\n"
-        "\\t\\tif (vma->vm_file &&\\n"
-        "\\t\\t    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&\\n"
-        "\\t\\t    susfs_is_current_non_root_user_app_proc()) {\\n"
-        "\\t\\t\\tseq_puts(m, \"VmFlags: mr mw me\\n\");\\n"
-        "\\t\\t} else {\\n"
-        "#endif\\n"
-        "\\t\\t\\tarch_show_smap(m, vma);\\n"
-        "\\t\\t\\tshow_smap_vma_flags(m, vma);\\n"
-        "#ifdef CONFIG_KSU_SUSFS_SUS_MAP\\n"
-        "\\t\\t}\\n"
-        "#endif\\n"
-        "\\t}"
+    old = """\tif (!rollup_mode)
+\t\tseq_printf(m,
+\t\t\t   "Size:           %8lu kB\\n"
+\t\t\t   "KernelPageSize: %8lu kB\\n"
+\t\t\t   "MMUPageSize:    %8lu kB\\n",
+\t\t\t   (vma->vm_end - vma->vm_start) >> 10,
+\t\t\t   vma_kernel_pagesize(vma) >> 10,
+\t\t\t   vma_mmu_pagesize(vma) >> 10);"""
+    new = r"""\t/* susfs_run8_smap_compat: preserve this tree's inline smaps formatter. */
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+\tif (!rollup_mode && vma->vm_file &&
+\t    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
+\t    susfs_is_current_non_root_user_app_proc()) {
+\t\tseq_printf(m, "Size:           %8lu kB\nKernelPageSize: %8lu kB\nMMUPageSize:    %8lu kB\n",
+\t\t\t   (vma->vm_end - vma->vm_start) >> 10, 4, 4);
+\t} else
+#endif
+\tif (!rollup_mode)
+\t\tseq_printf(m,
+\t\t\t   "Size:           %8lu kB\n"
+\t\t\t   "KernelPageSize: %8lu kB\n"
+\t\t\t   "MMUPageSize:    %8lu kB\n",
+\t\t\t   (vma->vm_end - vma->vm_start) >> 10,
+\t\t\t   vma_kernel_pagesize(vma) >> 10,
+\t\t\t   vma_mmu_pagesize(vma) >> 10);"""
+    if old not in s:
+        raise SystemExit("[SUSFS][FATAL] task_mmu.c Size formatter anchor missing")
+    s = s.replace(old, new, 1)
+    old = """\tif (!rollup_mode) {
+\t\tarch_show_smap(m, vma);
+\t\tshow_smap_vma_flags(m, vma);
+\t}"""
+    new = r"""\tif (!rollup_mode) {
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+\t\tif (vma->vm_file &&
+\t\t    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
+\t\t    susfs_is_current_non_root_user_app_proc()) {
+\t\t\tseq_puts(m, "VmFlags: mr mw me\n");
+\t\t} else {
+#endif
+\t\t\tarch_show_smap(m, vma);
+\t\t\tshow_smap_vma_flags(m, vma);
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+\t\t}
+#endif
+\t}"""
     if old not in s:
         raise SystemExit("[SUSFS][FATAL] task_mmu.c smaps flags anchor missing")
     s = s.replace(old, new, 1)
+    s = s.replace("/* susfs_run8_smap_compat:", "/* susfs_run8_smap_compat:", 1)
     p.write_text(s)
 else:
     print("[SUSFS] task_mmu smaps compatibility already applied")
