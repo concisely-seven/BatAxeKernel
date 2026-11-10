@@ -168,6 +168,16 @@ curl -fL --retry 3 "$SUSFS_SOURCE_BASE/include/linux/susfs.h" -o "$ROOT/include/
 curl -fL --retry 3 "$SUSFS_SOURCE_BASE/include/linux/susfs_def.h" -o "$ROOT/include/linux/susfs_def.h"
 curl -fL --retry 3 "$SUSFS_SOURCE_BASE/fs/susfs.c" -o "$ROOT/fs/susfs.c"
 
+# This Run #8 kernel is Linux 4.14 and predates linux/bits.h.
+# SUSFS only needs the BIT() macro here; bitops.h is the 4.14 provider.
+sed -i 's|#include <linux/bits.h>|#include <linux/bitops.h>|' "$ROOT/include/linux/susfs_def.h"
+grep -q '#include <linux/bitops.h>' "$ROOT/include/linux/susfs_def.h"
+if grep -q '#include <linux/bits.h>' "$ROOT/include/linux/susfs_def.h"; then
+  echo "[SUSFS][FATAL] unsupported linux/bits.h include remains"
+  exit 1
+fi
+echo "[SUSFS] Adapted SUSFS header for Linux 4.14 (bitops.h)"
+
 # The pinned rsuntk/susfs-rksu-master commit already contains native
 # KernelSU-SUSFS integration. Do not apply the newer RKSU patch over it:
 grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"
