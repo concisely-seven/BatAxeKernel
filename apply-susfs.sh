@@ -108,39 +108,19 @@ elif "susfs_spoof_cmdline_or_bootconfig(m)" not in s:
     raise SystemExit("[SUSFS][FATAL] cmdline.c show function anchor missing")
 p.write_text(s)
 
-# task_mmu.c: adapt SUS_MAP smaps output to this tree's inline show_smap().
+# task_mmu.c: adapt the missing show_smap() hunk to this tree's inline formatter.
 p = root / "fs/proc/task_mmu.c"
 s = p.read_text()
 if "susfs_run8_smap_compat" not in s:
-    old = """\tif (!rollup_mode)
-\t\tseq_printf(m,
-\t\t\t   "Size:           %8lu kB\\n"
-\t\t\t   "KernelPageSize: %8lu kB\\n"
-\t\t\t   "MMUPageSize:    %8lu kB\\n",
-\t\t\t   (vma->vm_end - vma->vm_start) >> 10,
-\t\t\t   vma_kernel_pagesize(vma) >> 10,
-\t\t\t   vma_mmu_pagesize(vma) >> 10);"""
-    new = r"""\t/* susfs_run8_smap_compat: preserve this tree's inline smaps formatter. */
-#ifdef CONFIG_KSU_SUSFS_SUS_MAP
-\tif (!rollup_mode && vma->vm_file &&
-\t    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
-\t    susfs_is_current_non_root_user_app_proc()) {
-\t\tseq_printf(m, "Size:           %8lu kB\nKernelPageSize: %8lu kB\nMMUPageSize:    %8lu kB\n",
-\t\t\t   (vma->vm_end - vma->vm_start) >> 10, 4, 4);
-\t} else
-#endif
-\tif (!rollup_mode)
-\t\tseq_printf(m,
-\t\t\t   "Size:           %8lu kB\n"
-\t\t\t   "KernelPageSize: %8lu kB\n"
-\t\t\t   "MMUPageSize:    %8lu kB\n",
-\t\t\t   (vma->vm_end - vma->vm_start) >> 10,
-\t\t\t   vma_kernel_pagesize(vma) >> 10,
-\t\t\t   vma_mmu_pagesize(vma) >> 10);"""
-    new = new.replace(r"\t", "\t")
-    if old not in s:
-        raise SystemExit("[SUSFS][FATAL] task_mmu.c Size formatter anchor missing")
-    s = s.replace(old, new, 1)
+    # The upstream hunk immediately before the failed hunk adds the SUS_MAP
+    # Size override and jumps to this label. Restore the missing label only.
+    if "goto bypass_orig_flow;" in s and "bypass_orig_flow:" not in s:
+        anchor = """\t\t   vma_mmu_pagesize(vma) >> 10);"""
+        if anchor not in s:
+            raise SystemExit("[SUSFS][FATAL] task_mmu.c Size output tail missing")
+        s = s.replace(anchor, anchor + "\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\nbypass_orig_flow:\n#endif", 1)
+
+    # This source tree keeps show_smap() inline and has no __show_smap().
     old = """\tif (!rollup_mode) {
 \t\tarch_show_smap(m, vma);
 \t\tshow_smap_vma_flags(m, vma);
@@ -160,9 +140,10 @@ if "susfs_run8_smap_compat" not in s:
 #endif
 \t}"""
     new = new.replace(r"\t", "\t")
-    if old not in s:
+    if old in s:
+        s = s.replace(old, new, 1)
+    elif "VmFlags: mr mw me" not in s:
         raise SystemExit("[SUSFS][FATAL] task_mmu.c smaps flags anchor missing")
-    s = s.replace(old, new, 1)
     s = s.replace("/* susfs_run8_smap_compat:", "/* susfs_run8_smap_compat:", 1)
     p.write_text(s)
 else:
