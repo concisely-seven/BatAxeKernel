@@ -33,9 +33,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git -C KernelSU rev-parse HEAD)" = "88e37d606fc12758421c3e36b0f61499610cfe8d"
           grep -q 'url = https://github.com/rsuntk/KernelSU.git' .gitmodules
-          echo "Run #8-derived RKSU submodule verified."
+          git -C KernelSU fetch --depth=1 origin 9b28326af4145974560122644e87fc9a021a2cce
+          git -C KernelSU checkout --detach 9b28326af4145974560122644e87fc9a021a2cce
+          test "$(git -C KernelSU rev-parse HEAD)" = "9b28326af4145974560122644e87fc9a021a2cce"
+          grep -q 'config KSU_SUSFS' KernelSU/kernel/Kconfig
+          grep -q 'KernelSU-SusFS version' KernelSU/kernel/Makefile
+          echo "Run #8-derived kernel base + native SUSFS-enabled RKSU submodule verified."
 
       - name: Install build dependencies
         run: |
