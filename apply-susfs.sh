@@ -395,7 +395,7 @@ defs.write_text(s)
 hook = root / "KernelSU/kernel/setuid_hook.c"
 s = hook.read_text()
 s = s.replace("extern void susfs_run_sus_path_loop(uid_t uid);", "extern void susfs_run_sus_path_loop(void);")
-s = s.replace("\textern void susfs_reorder_mnt_id(void);\n", "")
+s = s.replace("extern void susfs_reorder_mnt_id(void);\n", "")
 s = s.replace("\tsusfs_reorder_mnt_id();\n", "")
 s = s.replace("\tsusfs_run_sus_path_loop(new_uid);", "\tsusfs_run_sus_path_loop();")
 if "susfs_reorder_mnt_id" in s or "susfs_run_sus_path_loop(new_uid)" in s:
