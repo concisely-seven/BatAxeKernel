@@ -356,10 +356,6 @@ sc.write_text(s)
 # This SUSFS backport has no mount-id reorder routine: v2.4.0 handles mount IDs
 # in namespace.c itself, so remove the obsolete RKSU call rather than stub it.
 # Its path-loop worker takes no uid argument in this version.
-python3 - "$ROOT" <<'PY'
-import pathlib, sys
-root = pathlib.Path(sys.argv[1])
-
 susfs = root / "fs/susfs.c"
 s = susfs.read_text()
 old = "static void susfs_run_sus_path_loop(void)"
@@ -380,18 +376,18 @@ if proto not in s:
     s = s.replace(anchor, anchor + proto, 1)
 hdr.write_text(s)
 
-# When logging is disabled, the v2.4.0 header forgot the rate-limited
-# no-op macros. Keep call sites valid without enabling noisy kernel logging.
-defs = root / "include/linux/susfs_def.h"
-s = defs.read_text()
-old = "#define SUSFS_LOGI(fmt, ...) \\n#define SUSFS_LOGE(fmt, ...) \\n"
-new = old + "#define SUSFS_LOGI_RL(fmt, ...) \\n#define SUSFS_LOGE_RL(fmt, ...) \\n"
+# The rate-limited macros are local to fs/susfs.c, not susfs_def.h.
+# Define no-op forms in the disabled-logging branch so logging can remain off.
+susfs = root / "fs/susfs.c"
+s = susfs.read_text()
 if "#define SUSFS_LOGI_RL(fmt, ...)" not in s:
-    if old not in s:
-        raise SystemExit("[SUSFS][FATAL] susfs_def.h disabled-logging macro block missing")
-    s = s.replace(old, new, 1)
-defs.write_text(s)
-
+    pattern = r'(#else\\n#define SUSFS_LOGI\\(fmt, \\\.\\.\\.\\)[ \\t]*\\n#define SUSFS_LOGE\\(fmt, \\\.\\.\\.\\)[ \\t]*\\n)(#endif)'
+    m = re.search(pattern, s)
+    if not m:
+        raise SystemExit("[SUSFS][FATAL] fs/susfs.c disabled-logging macro block missing")
+    block = m.group(1) + "#define SUSFS_LOGI_RL(fmt, ...) \\n#define SUSFS_LOGE_RL(fmt, ...) \\n" + m.group(2)
+    s = s[:m.start()] + block + s[m.end():]
+susfs.write_text(s)
 hook = root / "KernelSU/kernel/setuid_hook.c"
 s = hook.read_text()
 s = s.replace("extern void susfs_run_sus_path_loop(uid_t uid);", "extern void susfs_run_sus_path_loop(void);")
@@ -404,7 +400,6 @@ if "susfs_run_sus_path_loop(void)" not in s:
     raise SystemExit("[SUSFS][FATAL] RKSU path-loop hook declaration was not adapted")
 hook.write_text(s)
 print("[SUSFS] RKSU setuid hooks reconciled with v2.4.0 API; obsolete mount-id reorder hook removed")
-PY
 
 # Pin the intended feature/config ABI and ensure stale v1.x dispatcher calls
 # are gone from the checked-out RKSU source.
@@ -413,6 +408,11 @@ def require(path, needle, label):
     if needle not in data:
         raise SystemExit(f"[SUSFS][FATAL] missing {label}: {needle}")
 require(root / "include/linux/susfs_def.h", "#define SUSFS_MAGIC 0xFAFAFAFA", "v2.4 SUSFS magic")
+require(susfs, "#define SUSFS_LOGI_RL", "disabled-logging rate-limited macro")
+require(susfs, "void susfs_run_sus_path_loop(void)", "exported SUSFS path-loop hook")
+require(hook, "susfs_run_sus_path_loop(void)", "RKSU path-loop ABI")
+if "susfs_reorder_mnt_id" in hook.read_text():
+    raise SystemExit("[SUSFS][FATAL] obsolete RKSU mount-id reorder hook remains")
 require(sc, "CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS", "v2.4 mount-hide command")
 if "susfs_set_hide_sus_mnts_for_all_procs" in sc.read_text():
     raise SystemExit("[SUSFS][FATAL] legacy hide-mount API still referenced")
