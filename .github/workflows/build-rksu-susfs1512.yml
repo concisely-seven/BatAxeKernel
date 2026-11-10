@@ -1,10 +1,10 @@
-name: Build N971N Binary2 RKSU + SUSFS 1.5.12
-run-name: "SeVenkernel RKSU SUSFS1512 - d1xks - Clang 13"
+name: Build N971N Binary2 RKSU + SUSFS 1.5.12 (Run 8 fix)
+run-name: "SeVenkernel RKSU SUSFS1512 - d1xks - Clang 13 (Run 8 fix)"
 
 on:
   push:
     branches:
-      - RKSU-susfs1512
+      - RKSU-susfs1512-fix-from-run8
     paths:
       - 'build.sh'
       - 'apply-susfs.sh'
@@ -23,19 +23,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
-      - name: Checkout Run #5 baseline with pinned submodules
+      - name: Checkout Run #8-derived fix branch with pinned submodules
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
           submodules: true
 
-      - name: Verify exact Run #5 RKSU source
+      - name: Verify Run #8 RKSU source and pinned submodule
         shell: bash
         run: |
           set -euo pipefail
           test "$(git -C KernelSU rev-parse HEAD)" = "88e37d606fc12758421c3e36b0f61499610cfe8d"
           grep -q 'url = https://github.com/rsuntk/KernelSU.git' .gitmodules
-          echo "Run #5 RKSU submodule verified."
+          echo "Run #8-derived RKSU submodule verified."
 
       - name: Install build dependencies
         run: |
