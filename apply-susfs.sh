@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run 8 fix: keep validation block single-source and shell-parseable.
+# Run #8-derived RKSU + SUSFS v2.4.0 integration for Samsung Exynos 9825 / Linux 4.14.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -7,230 +7,235 @@ KSU_DIR="$ROOT/KernelSU"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-# This is the exact RSNTK/RKSU submodule revision used by Run #8.
 EXPECTED_KSU_COMMIT="9b28326af4145974560122644e87fc9a021a2cce"
-SUSFS_SOURCE_BASE="https://raw.githubusercontent.com/F640/begonia-ckernel-mod/fe1fe1491b2f71ee62be64eb9525c92f63fde938/patches/susfs-backport/thesillyok-susfs-1.5.12"
-KERNEL_PATCH_URL="$SUSFS_SOURCE_BASE/thesillyok-susfs-1.5.12-mod.patch"
+SUSFS_PATCH_URL="https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/4b0766bdf5d568b695dfbb19994788f14c636f2b/Patches/Patch/susfs_patch_to_4.14.patch"
 
 test -d "$ROOT/fs"
-test -f "$KSU_DIR/kernel/Kconfig"
+test -f "$KSU_DIR/kernel/supercalls.c"
 ACTUAL_KSU_COMMIT="$(git -C "$KSU_DIR" rev-parse HEAD)"
 if [[ "$ACTUAL_KSU_COMMIT" != "$EXPECTED_KSU_COMMIT" ]]; then
   echo "[SUSFS][FATAL] KernelSU submodule changed: expected $EXPECTED_KSU_COMMIT, got $ACTUAL_KSU_COMMIT"
   exit 1
 fi
-echo "[KSU] Pinned known-good submodule: $ACTUAL_KSU_COMMIT"
+echo "[KSU] Pinned Run #8 RKSU source verified: $ACTUAL_KSU_COMMIT"
 
-curl -fL --retry 3 "$KERNEL_PATCH_URL" -o "$TMP_DIR/susfs-kernel-1.5.12.patch"
-
-# Samsung's AVC implementation has a different function signature from the
-# upstream hunk. Drop only that optional AVC-log-spoofing diff; core SUSFS
-# functionality remains enabled. Also apply namespace declarations manually
-# because Samsung's include context differs from upstream.
-python3 - "$TMP_DIR/susfs-kernel-1.5.12.patch" "$ROOT/fs/namespace.c" <<'PYFIX'
-import pathlib, sys
-patch = pathlib.Path(sys.argv[1])
-data = patch.read_text()
-start = data.find("diff --git a/security/selinux/avc.c ")
-if start >= 0:
-    end = data.find("\ndiff --git ", start + 1)
-    if end < 0:
-        data = data[:start]
-    else:
-        data = data[:start] + data[end+1:]
-    patch.write_text(data)
-    print("[SUSFS] Skipped incompatible optional AVC log-spoofing hunk")
-
-ns = pathlib.Path(sys.argv[2])
-s = ns.read_text()
-if "static DEFINE_IDA(susfs_mnt_id_ida);" not in s:
-    anchor = '#include "internal.h"\n'
-    if anchor not in s:
-        raise SystemExit("[SUSFS][FATAL] namespace.c internal.h anchor missing")
-    block = """
-#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-extern bool susfs_is_current_ksu_domain(void);
-extern bool susfs_is_current_zygote_domain(void);
-extern bool susfs_is_boot_completed_triggered;
-static DEFINE_IDA(susfs_mnt_id_ida);
-static DEFINE_IDA(susfs_mnt_group_ida);
-static int susfs_mnt_id_start = DEFAULT_SUS_MNT_ID;
-static int susfs_mnt_group_start = DEFAULT_SUS_MNT_GROUP_ID;
-#define CL_ZYGOTE_COPY_MNT_NS BIT(24)
-#define CL_COPY_MNT_NS BIT(25)
-#endif
-"""
-    s = s.replace(anchor, anchor + block, 1)
-    ns.write_text(s)
-    print("[SUSFS] Restored Samsung namespace SUSFS declarations")
-PYFIX
-
-# Apply the Linux 4.14 SUSFS backport only once.
-if grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h" 2>/dev/null; then
-  echo "[SUSFS] Kernel layer already has v1.5.12"
-else
-  if [[ -e "$ROOT/fs/susfs.c" || -e "$ROOT/include/linux/susfs.h" ]]; then
-    echo "[SUSFS][FATAL] Existing SUSFS files found but version is not v1.5.12"
-    exit 1
-  fi
-  # The upstream 4.14 backport has three context mismatches against the
-  # Samsung Exynos 9825 Run #8 tree. Apply every matching hunk, then adapt
-  # those three known sites explicitly below. Any other reject is fatal.
-  if patch --batch --forward -p1 -F3 -d "$ROOT" < "$TMP_DIR/susfs-kernel-1.5.12.patch"; then
-    echo "[SUSFS] Upstream kernel patch applied without rejects"
-  else
-    patch_status=$?
-    [[ "$patch_status" -eq 1 ]] || {
-      echo "[SUSFS][FATAL] patch command failed with status $patch_status"
-      exit "$patch_status"
-    }
-    for reject in "$ROOT/fs/namespace.c.rej" "$ROOT/fs/proc/cmdline.c.rej" "$ROOT/fs/proc/task_mmu.c.rej"; do
-      test -s "$reject" || {
-        echo "[SUSFS][FATAL] Unexpected patch failure; missing expected reject: $reject"
-        exit 1
-      }
-    done
-    reject_count="$(find "$ROOT" -name '*.rej' -type f | wc -l)"
-    [[ "$reject_count" -eq 3 ]] || {
-      echo "[SUSFS][FATAL] Expected exactly 3 known rejects, found $reject_count"
-      find "$ROOT" -name '*.rej' -type f -print
-      exit 1
-    }
-    python3 - "$ROOT" <<'PY'
-import pathlib, sys
-root = pathlib.Path(sys.argv[1])
-
-def replace_once(path, old, new, label):
-    p = root / path
-    s = p.read_text()
-    if new in s:
-        print(f"[SUSFS] {label}: already adapted")
-        return
-    if old not in s:
-        raise SystemExit(f"[SUSFS][FATAL] {label}: expected source context not found")
-    p.write_text(s.replace(old, new, 1))
-    print(f"[SUSFS] {label}: adapted for Run #8 Samsung source")
-
-# namespace.c: Samsung adds fslog.h/slub_def.h after sched/task.h.
-p = root / "fs/namespace.c"
-s = p.read_text()
-if "include <linux/susfs_def.h>" not in s:
-    anchor = "#include <linux/sched/task.h>\n"
-    if anchor not in s:
-        raise SystemExit("[SUSFS][FATAL] namespace.c include anchor missing")
-    inc = "#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_TRY_UMOUNT)\n#include <linux/susfs_def.h>\n#endif\n"
-    p.write_text(s.replace(anchor, anchor + inc, 1))
-
-# cmdline.c: this Samsung tree exposes new_command_line, not saved_command_line.
-p = root / "fs/proc/cmdline.c"
-s = p.read_text()
-if "extern int susfs_spoof_cmdline_or_bootconfig" not in s:
-    anchor = "#include <asm/setup.h>\n"
-    if anchor not in s:
-        raise SystemExit("[SUSFS][FATAL] cmdline.c include anchor missing")
-    decl = "#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\nextern int susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);\n#endif\n"
-    s = s.replace(anchor, anchor + decl, 1)
-old = """static int cmdline_proc_show(struct seq_file *m, void *v)
-{
-\tseq_puts(m, new_command_line);"""
-new = r"""static int cmdline_proc_show(struct seq_file *m, void *v)
-{
-#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-\tif (!susfs_spoof_cmdline_or_bootconfig(m)) {
-\t\tseq_putc(m, '\n');
-\t\treturn 0;
-\t}
-#endif
-\tseq_puts(m, new_command_line);"""
-new = new.replace(r"\t", "\t")
-if old in s:
-    s = s.replace(old, new, 1)
-elif "susfs_spoof_cmdline_or_bootconfig(m)" not in s:
-    raise SystemExit("[SUSFS][FATAL] cmdline.c show function anchor missing")
-p.write_text(s)
-
-# task_mmu.c: adapt the missing show_smap() hunk to this tree's inline formatter.
-p = root / "fs/proc/task_mmu.c"
-s = p.read_text()
-if "susfs_run8_smap_compat" not in s:
-    # The upstream hunk immediately before the failed hunk adds the SUS_MAP
-    # Size override and jumps to this label. Restore the missing label only.
-    smaps_start = s.find("static int show_smap(")
-    smaps_end = s.find("static int show_pid_smap", smaps_start)
-    if smaps_start < 0 or smaps_end < 0:
-        raise SystemExit("[SUSFS][FATAL] task_mmu.c show_smap() boundaries missing")
-    smaps = s[smaps_start:smaps_end]
-    if "goto bypass_orig_flow;" in smaps and "bypass_orig_flow:" not in smaps:
-        anchor = """\t\t   vma_mmu_pagesize(vma) >> 10);"""
-        if anchor not in smaps:
-            raise SystemExit("[SUSFS][FATAL] task_mmu.c Size output tail missing")
-        smaps = smaps.replace(anchor, anchor + "\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\nbypass_orig_flow:\n#endif", 1)
-        s = s[:smaps_start] + smaps + s[smaps_end:]
-    elif "goto bypass_orig_flow;" not in smaps:
-        raise SystemExit("[SUSFS][FATAL] expected SUS_MAP Size override hunk was not applied")
-
-    # This source tree keeps show_smap() inline and has no __show_smap().
-    old = """\tif (!rollup_mode) {
-\t\tarch_show_smap(m, vma);
-\t\tshow_smap_vma_flags(m, vma);
-\t}"""
-    new = r"""\tif (!rollup_mode) {
-#ifdef CONFIG_KSU_SUSFS_SUS_MAP
-\t\tif (vma->vm_file &&
-\t\t    unlikely(file_inode(vma->vm_file)->i_mapping->flags & BIT_SUS_MAPS) &&
-\t\t    susfs_is_current_non_root_user_app_proc()) {
-\t\t\tseq_puts(m, "VmFlags: mr mw me\n");
-\t\t} else {
-#endif
-\t\t\tarch_show_smap(m, vma);
-\t\t\tshow_smap_vma_flags(m, vma);
-#ifdef CONFIG_KSU_SUSFS_SUS_MAP
-\t\t}
-#endif
-\t}"""
-    new = new.replace(r"\t", "\t")
-    if old in s:
-        s = s.replace(old, new, 1)
-    elif "VmFlags: mr mw me" not in s:
-        raise SystemExit("[SUSFS][FATAL] task_mmu.c smaps flags anchor missing")
-    s = s.replace("/* susfs_run8_smap_compat:", "/* susfs_run8_smap_compat:", 1)
-    p.write_text(s)
-else:
-    print("[SUSFS] task_mmu smaps compatibility already applied")
-PY
-    rm -f "$ROOT/fs/namespace.c.rej" "$ROOT/fs/proc/cmdline.c.rej" "$ROOT/fs/proc/task_mmu.c.rej"
-  fi
-fi
-
-# The Linux 4.14 backport patch wires SUSFS into VFS but intentionally
-# keeps the three SUSFS implementation/header files as separate source files.
-# Fetch them from the same immutable upstream revision before Kconfig checks.
-mkdir -p "$ROOT/include/linux"
-curl -fL --retry 3 "$SUSFS_SOURCE_BASE/include/linux/susfs.h" -o "$ROOT/include/linux/susfs.h"
-curl -fL --retry 3 "$SUSFS_SOURCE_BASE/include/linux/susfs_def.h" -o "$ROOT/include/linux/susfs_def.h"
-curl -fL --retry 3 "$SUSFS_SOURCE_BASE/fs/susfs.c" -o "$ROOT/fs/susfs.c"
-
-# This Run #8 kernel is Linux 4.14 and predates linux/bits.h.
-# SUSFS only needs the BIT() macro here; bitops.h is the 4.14 provider.
-sed -i 's|#include <linux/bits.h>|#include <linux/bitops.h>|' "$ROOT/include/linux/susfs_def.h"
-grep -q '#include <linux/bitops.h>' "$ROOT/include/linux/susfs_def.h"
-if grep -q '#include <linux/bits.h>' "$ROOT/include/linux/susfs_def.h"; then
-  echo "[SUSFS][FATAL] unsupported linux/bits.h include remains"
+# Do not mix any files from the older v1.5.12 kernel-side backport.
+if [[ -e "$ROOT/fs/susfs.c" || -e "$ROOT/include/linux/susfs.h" || -e "$ROOT/include/linux/susfs_def.h" ]]; then
+  echo "[SUSFS][FATAL] Existing SUSFS implementation found before v2.4.0 application"
   exit 1
 fi
-echo "[SUSFS] Adapted SUSFS header for Linux 4.14 (bitops.h)"
 
-# The pinned rsuntk/susfs-rksu-master commit already contains native
-# KernelSU-SUSFS integration. Do not apply the newer RKSU patch over it:
-grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"
+curl -fL --retry 3 "$SUSFS_PATCH_URL" -o "$TMP_DIR/susfs-v2.4.0-4.14.patch"
+grep -q '+#define SUSFS_VERSION "v2.4.0"' "$TMP_DIR/susfs-v2.4.0-4.14.patch"
+grep -q '+#define SUSFS_MAGIC 0xFAFAFAFA' "$TMP_DIR/susfs-v2.4.0-4.14.patch"
+
+# Apply all upstream hunks. Fuzz is deliberately bounded; all rejects are
+# printed and retained in the build log so the Samsung-specific port can be
+# corrected from concrete source context, rather than silently discarded.
+set +e
+patch --batch --forward -p1 -F3 -d "$ROOT" < "$TMP_DIR/susfs-v2.4.0-4.14.patch"
+PATCH_STATUS=$?
+set -e
+if [[ "$PATCH_STATUS" -gt 1 ]]; then
+  echo "[SUSFS][FATAL] patch utility failed with status $PATCH_STATUS"
+  exit "$PATCH_STATUS"
+fi
+REJECTS="$(find "$ROOT" -type f -name '*.rej' -print | sort || true)"
+if [[ -n "$REJECTS" ]]; then
+  echo "[SUSFS][PORT-REQUIRED] v2.4.0 has context rejects on this Samsung 4.14.113 tree:"
+  printf '%s\n' "$REJECTS"
+else
+  echo "[SUSFS] Upstream v2.4.0 patch applied without rejects"
+fi
+
+# Linux 4.14 has BIT() in bitops.h, not linux/bits.h.
+if [[ -f "$ROOT/include/linux/susfs_def.h" ]]; then
+  sed -i 's|#include <linux/bits.h>|#include <linux/bitops.h>|' "$ROOT/include/linux/susfs_def.h"
+  grep -q '#include <linux/bitops.h>' "$ROOT/include/linux/susfs_def.h"
+fi
+
+# This Samsung tree exposes new_command_line rather than saved_command_line.
+# Provide the v2.4.0 /proc/cmdline hook in the existing proc_cmdline formatter.
+python3 - "$ROOT" <<'PY'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+
+cmd = root / "fs/proc/cmdline.c"
+s = cmd.read_text()
+if "susfs_spoof_cmdline_or_bootconfig" not in s:
+    anchor = "#include <asm/setup.h>\n"
+    if anchor not in s:
+        raise SystemExit("[SUSFS][FATAL] cmdline.c asm/setup.h include anchor missing")
+    decl = """#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+extern struct static_key_false susfs_is_fake_cmdline_or_bootconfig_buffer_set;
+extern void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);
+#endif
+
+"""
+    s = s.replace(anchor, anchor + decl, 1)
+
+if "static_branch_likely(&susfs_is_fake_cmdline_or_bootconfig_buffer_set)" not in s:
+    pattern = r"(static int cmdline_proc_show\(struct seq_file \*m, void \*v\)\n\{\n)"
+    repl = r"""\1#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+	if (static_branch_likely(&susfs_is_fake_cmdline_or_bootconfig_buffer_set)) {
+		susfs_spoof_cmdline_or_bootconfig(m);
+		seq_putc(m, '\\n');
+		return 0;
+	}
+#endif
+"""
+    s2, count = re.subn(pattern, repl, s, count=1)
+    if count != 1:
+        raise SystemExit("[SUSFS][FATAL] cmdline_proc_show insertion point missing")
+    s = s2
+cmd.write_text(s)
+
+# The 4.14 Samsung inotify header lacks inotify_mark_user_mask(). Its
+# historical implementation is exactly (mark->mask & IN_ALL_EVENTS).
+ih = root / "fs/notify/inotify/inotify.h"
+s = ih.read_text()
+if "inotify_mark_user_mask(" not in s:
+    helper = """
+#ifdef CONFIG_KSU_SUSFS
+static inline u32 inotify_mark_user_mask(struct fsnotify_mark *mark)
+{
+	return mark->mask & IN_ALL_EVENTS;
+}
+#endif
+"""
+    # Put the compatibility helper after the includes and before structures.
+    anchor = "#include <linux/slab.h> /* struct kmem_cache */\n"
+    if anchor not in s:
+        raise SystemExit("[SUSFS][FATAL] inotify.h include anchor missing")
+    s = s.replace(anchor, anchor + helper, 1)
+    ih.write_text(s)
+
+# Synchronize the old Run #8 RKSU supercall dispatcher with the v2.4.0 ABI.
+sc = root / "KernelSU/kernel/supercalls.c"
+s = sc.read_text()
+start = s.find("\t// If magic2 is susfs and current process is root")
+end = s.find("\t// Check if this is a request to install KSU fd", start)
+if start < 0 or end < 0:
+    raise SystemExit("[SUSFS][FATAL] RKSU supercalls SUSFS dispatch block not found")
+dispatch = r"""
+	// v2.4.0 SUSFS commands use the new non-SU mount-hide API and
+	// void __user ** ABI. Deprecated 1.x commands are intentionally
+	// not mapped to removed kernel functions.
+	if (magic2 == SUSFS_MAGIC && only_root()) {
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+		if (cmd == CMD_SUSFS_ADD_SUS_PATH) {
+			susfs_add_sus_path(arg);
+			return 0;
+		}
+		if (cmd == CMD_SUSFS_ADD_SUS_PATH_LOOP) {
+			susfs_add_sus_path_loop(arg);
+			return 0;
+		}
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+		if (cmd == CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS) {
+			susfs_set_hide_sus_mnts_for_non_su_procs(arg);
+			return 0;
+		}
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+		if (cmd == CMD_SUSFS_ADD_SUS_KSTAT ||
+		    cmd == CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY) {
+			susfs_add_sus_kstat(arg);
+			return 0;
+		}
+		if (cmd == CMD_SUSFS_UPDATE_SUS_KSTAT) {
+			susfs_update_sus_kstat(arg);
+			return 0;
+		}
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+		if (cmd == CMD_SUSFS_SET_UNAME) {
+			susfs_set_uname(arg);
+			return 0;
+		}
+#endif
+#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
+		if (cmd == CMD_SUSFS_ENABLE_LOG) {
+			susfs_enable_log(arg);
+			return 0;
+		}
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+		if (cmd == CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG) {
+			susfs_set_cmdline_or_bootconfig(arg);
+			return 0;
+		}
+#endif
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+		if (cmd == CMD_SUSFS_ADD_OPEN_REDIRECT) {
+			susfs_add_open_redirect(arg);
+			return 0;
+		}
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+		if (cmd == CMD_SUSFS_ADD_SUS_MAP) {
+			susfs_add_sus_map(arg);
+			return 0;
+		}
+#endif
+#ifdef CONFIG_KSU_SUSFS_PRIORITY_UID_FILTER
+		if (cmd == CMD_SUSFS_SET_PRIORITY_UID_FILTER) {
+			susfs_set_priority_uid_filter(arg);
+			return 0;
+		}
+#endif
+		if (cmd == CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING) {
+			susfs_set_avc_log_spoofing(arg);
+			return 0;
+		}
+		if (cmd == CMD_SUSFS_SHOW_ENABLED_FEATURES) {
+			susfs_get_enabled_features(arg);
+			return 0;
+		}
+		if (cmd == CMD_SUSFS_SHOW_VARIANT) {
+			susfs_show_variant(arg);
+			return 0;
+		}
+		if (cmd == CMD_SUSFS_SHOW_VERSION) {
+			susfs_show_version(arg);
+			return 0;
+		}
+		// Old Android-data-root, sdcard-root and try_umount commands
+		// are deprecated in v2.4.0; return success as a compatibility no-op.
+		return 0;
+	}
+
+"""
+s = s[:start] + dispatch + s[end:]
+sc.write_text(s)
+
+# Pin the intended feature/config ABI and ensure stale v1.x dispatcher calls
+# are gone from the checked-out RKSU source.
+def require(path, needle, label):
+    data = pathlib.Path(path).read_text()
+    if needle not in data:
+        raise SystemExit(f"[SUSFS][FATAL] missing {label}: {needle}")
+require(root / "include/linux/susfs_def.h", "#define SUSFS_MAGIC 0xFAFAFAFA", "v2.4 SUSFS magic")
+require(sc, "CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS", "v2.4 mount-hide command")
+if "susfs_set_hide_sus_mnts_for_all_procs" in sc.read_text():
+    raise SystemExit("[SUSFS][FATAL] legacy hide-mount API still referenced")
+if "susfs_set_i_state_on_external_dir" in sc.read_text():
+    raise SystemExit("[SUSFS][FATAL] removed external-dir API still referenced")
+if "susfs_add_try_umount(arg)" in sc.read_text():
+    raise SystemExit("[SUSFS][FATAL] deprecated try_umount API still referenced")
+print("[SUSFS] v2.4.0 RKSU supercall ABI migration applied")
+PY
+
+# The 2.4.0 backport supplies susfs.c and the VFS hooks. The manager's
+# deprecated 1.x try_umount API is disabled in this build.
+grep -q 'SUSFS_VERSION "v2.4.0"' "$ROOT/include/linux/susfs.h"
 grep -q '^config KSU_SUSFS$' "$KSU_DIR/kernel/Kconfig"
 test -s "$ROOT/fs/susfs.c"
-for symbol in KSU_SUSFS KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_MAP; do
-  grep -q "^config ${symbol}$" "$KSU_DIR/kernel/Kconfig" || {
-    echo "[SUSFS][FATAL] Missing KernelSU config symbol: ${symbol}"
-    exit 1
-  }
-done
+grep -q 'obj-$(CONFIG_KSU_SUSFS) += susfs.o' "$ROOT/fs/Makefile"
 
-grep -q 'KernelSU-SusFS version' "$KSU_DIR/kernel/Makefile"
-echo "[SUSFS] Native RKSU-SUSFS integration verified at $ACTUAL_KSU_COMMIT"
+echo "[SUSFS] v2.4.0 integration source and build wiring verified"
+if [[ -n "$REJECTS" ]]; then
+  echo "[SUSFS][FATAL] Port still has rejected upstream hunks; inspect *.rej before kernel compilation"
+  exit 1
+fi
