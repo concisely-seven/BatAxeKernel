@@ -169,6 +169,25 @@ if "struct inode *inode;" not in fill:
 import pathlib, re, sys
 root = pathlib.Path(sys.argv[1])
 
+# KSTAT's fs/stat.c hunk calls helpers and STATX_SUS_KSTAT flags from
+# susfs_def.h. The generic 4.14 patch does not add this include, which caused
+# the Run #46 undeclared-identifier / implicit-declaration errors.
+stat = root / "fs/stat.c"
+s = stat.read_text()
+if '#include <linux/susfs_def.h>' not in s:
+    anchor = '#include <linux/compat.h>\\n'
+    if anchor not in s:
+        raise SystemExit("[SUSFS][FATAL] fs/stat.c compat.h include anchor missing")
+    s = s.replace(anchor, anchor + "#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT\\n#include <linux/susfs_def.h>\\n#endif\\n", 1)
+stat.write_text(s)
+if '#define STATX_SUS_KSTAT 0x10000000U' not in (root / "include/linux/susfs_def.h").read_text():
+    raise SystemExit("[SUSFS][FATAL] STATX_SUS_KSTAT definitions missing from susfs_def.h")
+if 'susfs_is_current_app_uid' not in stat.read_text():
+    raise SystemExit("[SUSFS][FATAL] KSTAT call site missing from fs/stat.c after patch")
+if '#include <linux/susfs_def.h>' not in stat.read_text():
+    raise SystemExit("[SUSFS][FATAL] fs/stat.c does not include SUSFS KSTAT definitions")
+print("[SUSFS] fs/stat.c KSTAT declarations and STATX flags include verified")
+
 # AVC: preserve the original if/else pair. The generic patch placed a goto
 # between them, which is invalid C and also omitted the target label.
 avc = root / "security/selinux/avc.c"
