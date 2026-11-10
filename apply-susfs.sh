@@ -79,7 +79,7 @@ if "static_branch_likely(&susfs_is_fake_cmdline_or_bootconfig_buffer_set)" not i
     repl = r"""\1#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
 	if (static_branch_likely(&susfs_is_fake_cmdline_or_bootconfig_buffer_set)) {
 		susfs_spoof_cmdline_or_bootconfig(m);
-		seq_putc(m, '\\n');
+		seq_putc(m, '\n');
 		return 0;
 	}
 #endif
