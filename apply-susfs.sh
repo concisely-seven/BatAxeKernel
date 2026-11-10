@@ -26,6 +26,22 @@ if [[ -e "$ROOT/fs/susfs.c" || -e "$ROOT/include/linux/susfs.h" || -e "$ROOT/inc
 fi
 
 curl -fL --retry 3 "$SUSFS_PATCH_URL" -o "$TMP_DIR/susfs-v2.4.0-4.14.patch"
+# The generic 4.14 patch has a malformed AVC hunk for this Samsung tree.
+# Drop only that file's hunk and apply the compatible AVC spoofing logic below.
+python3 - "$TMP_DIR/susfs-v2.4.0-4.14.patch" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1])
+lines = p.read_text().splitlines(keepends=True)
+out = []
+skip = False
+for line in lines:
+    if line.startswith("diff --git "):
+        skip = " b/security/selinux/avc.c" in line
+    if not skip:
+        out.append(line)
+p.write_text("".join(out))
+print("[SUSFS] Excluded generic avc.c hunk; Samsung 4.14 AVC port will be applied explicitly")
+PY
 grep -q '+#define SUSFS_VERSION "v2.4.0"' "$TMP_DIR/susfs-v2.4.0-4.14.patch"
 grep -q '+#define SUSFS_MAGIC 0xFAFAFAFA' "$TMP_DIR/susfs-v2.4.0-4.14.patch"
 
@@ -148,6 +164,91 @@ if "struct inode *inode;" not in fill:
     fill = fill.replace(anchor, anchor + "\n" + decl, 1)
     s = s[:fill_start] + fill + s[fill_end:]
     rd.write_text(s)
+
+# Apply the Samsung 4.14.113 AVC and inotify adaptations explicitly.
+python3 - "$ROOT" <<'PY'
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1])
+
+# AVC: preserve the original if/else pair. The generic patch placed a goto
+# between them, which is invalid C and also omitted the target label.
+avc = root / "security/selinux/avc.c"
+s = avc.read_text()
+for inc in ("#include <linux/jump_label.h>\n",):
+    if inc not in s:
+        anchor = '#include <linux/ipv6.h>\n'
+        if anchor not in s:
+            raise SystemExit("[SUSFS][FATAL] avc.c include anchor missing")
+        s = s.replace(anchor, anchor + inc, 1)
+decls = """#ifdef CONFIG_KSU_SUSFS
+extern struct static_key_false susfs_is_avc_log_spoofing_enabled;
+extern u32 susfs_ksu_sid;
+extern u32 susfs_priv_app_sid;
+#endif
+
+"""
+if "extern struct static_key_false susfs_is_avc_log_spoofing_enabled;" not in s:
+    anchor = '#include "classmap.h"\n'
+    if anchor not in s:
+        raise SystemExit("[SUSFS][FATAL] avc.c classmap include anchor missing")
+    s = s.replace(anchor, anchor + decls, 1)
+needle = "\trc = security_sid_to_context(tsid, &scontext, &scontext_len);\n\tif (rc)"
+block = """\trc = security_sid_to_context(tsid, &scontext, &scontext_len);
+#ifdef CONFIG_KSU_SUSFS
+\tif (static_branch_likely(&susfs_is_avc_log_spoofing_enabled)) {
+\t\tif (unlikely(tsid == susfs_ksu_sid)) {
+\t\t\tif (rc)
+\t\t\t\taudit_log_format(ab, " tsid=%d", susfs_priv_app_sid);
+\t\t\telse
+\t\t\t\taudit_log_format(ab, " tcontext=%s", "u:r:priv_app:s0:c512,c768");
+\t\t\tgoto bypass_orig_flow;
+\t\t}
+\t}
+#endif
+\tif (rc)"""
+if "goto bypass_orig_flow;" not in s:
+    if needle not in s:
+        raise SystemExit("[SUSFS][FATAL] avc.c second security_sid_to_context anchor missing")
+    s = s.replace(needle, block, 1)
+else:
+    # If a previous patch fragment remains, fail closed rather than compile malformed flow.
+    raise SystemExit("[SUSFS][FATAL] unexpected generic AVC bypass fragment remains")
+end = '\t\tkfree(scontext);\n\t}\n\n\tBUG_ON(!tclass'
+replacement = '\t\tkfree(scontext);\n\t}\n#ifdef CONFIG_KSU_SUSFS\nbypass_orig_flow:\n#endif\n\n\tBUG_ON(!tclass'
+if "bypass_orig_flow:" not in s:
+    if end not in s:
+        raise SystemExit("[SUSFS][FATAL] avc.c bypass label insertion anchor missing")
+    s = s.replace(end, replacement, 1)
+avc.write_text(s)
+
+# fdinfo: Linux 4.14 is built as GNU89; keep mask in the function's
+# declaration block rather than introducing it after executable statements.
+fd = root / "fs/notify/fdinfo.c"
+s = fd.read_text()
+m = re.search(r"(static void inotify_fdinfo\([^\n]*\n(?:[^\n]*\n)*?\{)(.*?)(\n\})", s, re.S)
+if not m:
+    raise SystemExit("[SUSFS][FATAL] inotify_fdinfo function not found")
+head, body, tail = m.groups()
+body = body.replace("u32 mask = mark->mask & IN_ALL_EVENTS;", "mask = mark->mask & IN_ALL_EVENTS;")
+if "mask = mark->mask & IN_ALL_EVENTS;" in body and not re.search(r"^\s*u32 mask;", body, re.M):
+    if "struct inode *inode;" not in body:
+        raise SystemExit("[SUSFS][FATAL] fdinfo inode declaration anchor missing")
+    body = body.replace("struct inode *inode;", "struct inode *inode;\n\tu32 mask;", 1)
+s = s[:m.start()] + head + body + tail + s[m.end():]
+fd.write_text(s)
+
+# The v2.4.0 source uses its rate-limited logging macro from susfs_def.h.
+sus = root / "fs/susfs.c"
+ss = sus.read_text()
+if '#include <linux/susfs_def.h>' not in ss:
+    anchor = '#include <linux/susfs.h>\n'
+    if anchor not in ss:
+        ss = '#include <linux/susfs_def.h>\n' + ss
+    else:
+        ss = ss.replace(anchor, anchor + '#include <linux/susfs_def.h>\n', 1)
+sus.write_text(ss)
+print("[SUSFS] Samsung AVC flow, GNU89 inotify declaration, and logging header adapted")
+PY
 
 # Reject files are removed only after the equivalent source edits above succeed.
 (root / "fs/namespace.c.rej").unlink(missing_ok=True)
