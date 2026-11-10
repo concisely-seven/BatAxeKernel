@@ -443,7 +443,7 @@ kernelsu() {
     fi
 
     # Apply SUSFS 1.5.12 while preserving the exact KernelSU submodule commit
-    bash ./apply-susfs.sh
+    bash ./apply-susfs.sh || abort
 }
 
 # =============================================================================
@@ -479,11 +479,33 @@ kernel() {
 
     make -j$(nproc --all) $ARGS $DEFCONFIG || abort
 
+    if [[ "$KSU" == "y" ]]; then
+        for symbol in CONFIG_KSU CONFIG_KSU_SUSFS CONFIG_KSU_SUSFS_SUS_PATH CONFIG_KSU_SUSFS_SUS_MOUNT CONFIG_KSU_SUSFS_SUS_KSTAT CONFIG_KSU_SUSFS_TRY_UMOUNT CONFIG_KSU_SUSFS_SPOOF_UNAME CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG; do
+            grep -qx "${symbol}=y" out/.config || {
+                echo "[FATAL] Required KernelSU/SUSFS option is missing from final config: ${symbol}"
+                abort
+            }
+        done
+        grep -q 'SUSFS_VERSION "v1.5.12"' include/linux/susfs.h || {
+            echo "[FATAL] SUSFS kernel source version check failed"
+            abort
+        }
+        echo "[SUSFS] Final .config verified: KernelSU + SUSFS v1.5.12 enabled"
+    fi
+
     separator
     quotes "Building Kernel"
     separator
 
     make -j$(nproc --all) $ARGS || abort
+
+    if [[ "$KSU" == "y" ]]; then
+        test -s out/fs/susfs.o || {
+            echo "[FATAL] fs/susfs.o was not built; refusing to package a kernel without SUSFS"
+            abort
+        }
+        echo "[SUSFS] fs/susfs.o exists in the completed kernel build"
+    fi
 
     separator
     quotes "Finished Kernel Build!"
