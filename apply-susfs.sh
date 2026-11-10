@@ -114,11 +114,19 @@ s = p.read_text()
 if "susfs_run8_smap_compat" not in s:
     # The upstream hunk immediately before the failed hunk adds the SUS_MAP
     # Size override and jumps to this label. Restore the missing label only.
-    if "goto bypass_orig_flow;" in s and "bypass_orig_flow:" not in s:
+    smaps_start = s.find("static int show_smap(")
+    smaps_end = s.find("static int show_pid_smap", smaps_start)
+    if smaps_start < 0 or smaps_end < 0:
+        raise SystemExit("[SUSFS][FATAL] task_mmu.c show_smap() boundaries missing")
+    smaps = s[smaps_start:smaps_end]
+    if "goto bypass_orig_flow;" in smaps and "bypass_orig_flow:" not in smaps:
         anchor = """\t\t   vma_mmu_pagesize(vma) >> 10);"""
-        if anchor not in s:
+        if anchor not in smaps:
             raise SystemExit("[SUSFS][FATAL] task_mmu.c Size output tail missing")
-        s = s.replace(anchor, anchor + "\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\nbypass_orig_flow:\n#endif", 1)
+        smaps = smaps.replace(anchor, anchor + "\n#ifdef CONFIG_KSU_SUSFS_SUS_MAP\nbypass_orig_flow:\n#endif", 1)
+        s = s[:smaps_start] + smaps + s[smaps_end:]
+    elif "goto bypass_orig_flow;" not in smaps:
+        raise SystemExit("[SUSFS][FATAL] expected SUS_MAP Size override hunk was not applied")
 
     # This source tree keeps show_smap() inline and has no __show_smap().
     old = """\tif (!rollup_mode) {
