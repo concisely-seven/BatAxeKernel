@@ -481,7 +481,7 @@ kernel() {
 
     # Fail closed: never build/package a kernel without the requested RKSU + SUSFS config.
     if [[ -n "$KSU_NEXT" ]]; then
-        for symbol in CONFIG_KSU CONFIG_KSU_SUSFS CONFIG_KSU_SUSFS_SUS_PATH CONFIG_KSU_SUSFS_SUS_MOUNT CONFIG_KSU_SUSFS_SUS_KSTAT CONFIG_KSU_SUSFS_SPOOF_UNAME CONFIG_KSU_SUSFS_SUS_MAP CONFIG_KSU_SUSFS_OPEN_REDIRECT CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG; do
+        for symbol in CONFIG_KSU CONFIG_KSU_SUSFS CONFIG_KSU_SUSFS_SUS_PATH CONFIG_KSU_SUSFS_SUS_MOUNT CONFIG_KSU_SUSFS_SPOOF_UNAME CONFIG_KSU_SUSFS_SUS_MAP CONFIG_KSU_SUSFS_OPEN_REDIRECT CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG; do
             grep -qx "${symbol}=y" out/.config || {
                 echo "[FATAL] Required kernel config missing or disabled: ${symbol}"
                 abort
