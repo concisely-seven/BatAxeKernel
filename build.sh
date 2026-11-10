@@ -443,7 +443,7 @@ kernelsu() {
     fi
 
     # Apply SUSFS 1.5.12 while preserving the exact KernelSU submodule commit
-    bash ./apply-susfs.sh
+    bash ./apply-susfs.sh || abort
 }
 
 # =============================================================================
@@ -478,6 +478,16 @@ kernel() {
     separator
 
     make -j$(nproc --all) $ARGS $DEFCONFIG || abort
+
+    # Fail closed: never build/package a kernel without the requested RKSU + SUSFS config.
+    if [[ -n "$KSU_NEXT" ]]; then
+        for symbol in CONFIG_KSU CONFIG_KSU_SUSFS CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT CONFIG_KSU_SUSFS_SUS_PATH CONFIG_KSU_SUSFS_SUS_MOUNT CONFIG_KSU_SUSFS_SUS_MAP; do
+            grep -qx "${symbol}=y" out/.config || {
+                echo "[FATAL] Required kernel config missing or disabled: ${symbol}"
+                abort
+            }
+        done
+    fi
 
     separator
     quotes "Building Kernel"
@@ -849,6 +859,7 @@ main() {
     # Setup logging
     rm -rf ./build.log
     
+    set -o pipefail
     (
         START=`date +%s`
 
