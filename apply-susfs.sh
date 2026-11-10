@@ -166,7 +166,6 @@ if "struct inode *inode;" not in fill:
     rd.write_text(s)
 
 # Apply the Samsung 4.14.113 AVC and inotify adaptations explicitly.
-python3 - "$ROOT" <<'PY'
 import pathlib, re, sys
 root = pathlib.Path(sys.argv[1])
 
@@ -248,7 +247,6 @@ if '#include <linux/susfs_def.h>' not in ss:
         ss = ss.replace(anchor, anchor + '#include <linux/susfs_def.h>\n', 1)
 sus.write_text(ss)
 print("[SUSFS] Samsung AVC flow, GNU89 inotify declaration, and logging header adapted")
-PY
 
 # Reject files are removed only after the equivalent source edits above succeed.
 (root / "fs/namespace.c.rej").unlink(missing_ok=True)
