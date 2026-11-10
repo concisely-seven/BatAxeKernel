@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Run 8 fix: keep validation block single-source and shell-parseable.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
