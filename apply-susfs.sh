@@ -116,15 +116,15 @@ static inline u32 inotify_mark_user_mask(struct fsnotify_mark *mark)
 ns = root / "fs/namespace.c"
 s = ns.read_text()
 if "#include <linux/susfs_def.h>" not in s:
-    anchor = "#include <linux/sched/task.h>\\n"
+    anchor = "#include <linux/sched/task.h>\n"
     if anchor not in s:
         raise SystemExit("[SUSFS][FATAL] namespace.c sched/task include anchor missing")
-    s = s.replace(anchor, anchor + "#ifdef CONFIG_KSU_SUSFS\\n#include <linux/susfs_def.h>\\n#endif\\n#include <linux/jump_label.h>\\n", 1)
+    s = s.replace(anchor, anchor + "#ifdef CONFIG_KSU_SUSFS\n#include <linux/susfs_def.h>\n#endif\n#include <linux/jump_label.h>\n", 1)
 if "extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;" not in s:
-    anchor = '#include "internal.h"\\n'
+    anchor = '#include "internal.h"\n'
     if anchor not in s:
         raise SystemExit("[SUSFS][FATAL] namespace.c internal.h anchor missing")
-    block = """\\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+    block = """\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 extern bool susfs_is_current_ksu_domain(void);
 extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;
 #define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */
@@ -138,14 +138,14 @@ s = rd.read_text()
 if "static int filldir(" not in s:
     raise SystemExit("[SUSFS][FATAL] readdir.c filldir() function missing")
 fill_start = s.index("static int filldir(")
-fill_end = s.index("\\n}", fill_start)
+fill_end = s.index("\n}", fill_start)
 fill = s[fill_start:fill_end]
-decl = "#ifdef CONFIG_KSU_SUSFS_SUS_PATH\\n\\tstruct inode *inode;\\n#endif\\n"
+decl = "#ifdef CONFIG_KSU_SUSFS_SUS_PATH\n\tstruct inode *inode;\n#endif\n"
 if "struct inode *inode;" not in fill:
-    anchor = "\\tint reclen = ALIGN(offsetof(struct linux_dirent, d_name) + namlen + 2,\\n\\t\\tsizeof(long));\\n"
+    anchor = "\tint reclen = ALIGN(offsetof(struct linux_dirent, d_name) + namlen + 2,\n\t\tsizeof(long));\n"
     if anchor not in fill:
         raise SystemExit("[SUSFS][FATAL] readdir.c filldir() reclen declaration context missing")
-    fill = fill.replace(anchor, anchor + "\\n" + decl, 1)
+    fill = fill.replace(anchor, anchor + "\n" + decl, 1)
     s = s[:fill_start] + fill + s[fill_end:]
     rd.write_text(s)
 
