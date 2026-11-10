@@ -23,6 +23,48 @@ echo "[KSU] Pinned known-good submodule: $ACTUAL_KSU_COMMIT"
 
 curl -fL --retry 3 "$KERNEL_PATCH_URL" -o "$TMP_DIR/susfs-kernel-1.5.12.patch"
 
+# Samsung's AVC implementation has a different function signature from the
+# upstream hunk. Drop only that optional AVC-log-spoofing diff; core SUSFS
+# functionality remains enabled. Also apply namespace declarations manually
+# because Samsung's include context differs from upstream.
+python3 - "$TMP_DIR/susfs-kernel-1.5.12.patch" "$ROOT/fs/namespace.c" <<'PYFIX'
+import pathlib, sys
+patch = pathlib.Path(sys.argv[1])
+data = patch.read_text()
+start = data.find("diff --git a/security/selinux/avc.c ")
+if start >= 0:
+    end = data.find("\ndiff --git ", start + 1)
+    if end < 0:
+        data = data[:start]
+    else:
+        data = data[:start] + data[end+1:]
+    patch.write_text(data)
+    print("[SUSFS] Skipped incompatible optional AVC log-spoofing hunk")
+
+ns = pathlib.Path(sys.argv[2])
+s = ns.read_text()
+if "static DEFINE_IDA(susfs_mnt_id_ida);" not in s:
+    anchor = '#include "internal.h"\n'
+    if anchor not in s:
+        raise SystemExit("[SUSFS][FATAL] namespace.c internal.h anchor missing")
+    block = """
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+extern bool susfs_is_current_ksu_domain(void);
+extern bool susfs_is_current_zygote_domain(void);
+extern bool susfs_is_boot_completed_triggered;
+static DEFINE_IDA(susfs_mnt_id_ida);
+static DEFINE_IDA(susfs_mnt_group_ida);
+static int susfs_mnt_id_start = DEFAULT_SUS_MNT_ID;
+static int susfs_mnt_group_start = DEFAULT_SUS_MNT_GROUP_ID;
+#define CL_ZYGOTE_COPY_MNT_NS BIT(24)
+#define CL_COPY_MNT_NS BIT(25)
+#endif
+"""
+    s = s.replace(anchor, anchor + block, 1)
+    ns.write_text(s)
+    print("[SUSFS] Restored Samsung namespace SUSFS declarations")
+PYFIX
+
 # Apply the Linux 4.14 SUSFS backport only once.
 if grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h" 2>/dev/null; then
   echo "[SUSFS] Kernel layer already has v1.5.12"
