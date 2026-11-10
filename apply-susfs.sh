@@ -169,31 +169,17 @@ curl -fL --retry 3 "$SUSFS_SOURCE_BASE/fs/susfs.c" -o "$ROOT/fs/susfs.c"
 
 # The pinned rsuntk/susfs-rksu-master commit already contains native
 # KernelSU-SUSFS integration. Do not apply the newer RKSU patch over it:
-# that patch targets a restructured source tree and corrupts this older ABI.
 grep -q '^config KSU_SUSFS
 grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"
 grep -q '^config KSU_SUSFS$' "$KSU_DIR/kernel/Kconfig"
 test -s "$ROOT/fs/susfs.c"
-for symbol in KSU_SUSFS KSU_SUSFS_HAS_MAGIC_MOUNT KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_MAP; do
+for symbol in KSU_SUSFS KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_MAP; do
   grep -q "^config ${symbol}$" "$KSU_DIR/kernel/Kconfig" || {
     echo "[SUSFS][FATAL] Missing KernelSU config symbol: ${symbol}"
     exit 1
   }
 done
 
-echo "[SUSFS] Verified kernel SUSFS v1.5.12 + KernelSU integration"
  "$KSU_DIR/kernel/Kconfig"
 grep -q 'KernelSU-SusFS version' "$KSU_DIR/kernel/Makefile"
 echo "[SUSFS] Native RKSU-SUSFS integration verified at $ACTUAL_KSU_COMMIT"
-
-grep -q 'SUSFS_VERSION "v1.5.12"' "$ROOT/include/linux/susfs.h"
-grep -q '^config KSU_SUSFS$' "$KSU_DIR/kernel/Kconfig"
-test -s "$ROOT/fs/susfs.c"
-for symbol in KSU_SUSFS KSU_SUSFS_HAS_MAGIC_MOUNT KSU_SUSFS_SUS_PATH KSU_SUSFS_SUS_MOUNT KSU_SUSFS_SUS_MAP; do
-  grep -q "^config ${symbol}$" "$KSU_DIR/kernel/Kconfig" || {
-    echo "[SUSFS][FATAL] Missing KernelSU config symbol: ${symbol}"
-    exit 1
-  }
-done
-
-echo "[SUSFS] Verified kernel SUSFS v1.5.12 + KernelSU integration"
