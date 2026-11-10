@@ -137,6 +137,7 @@ if "susfs_run8_smap_compat" not in s:
 \t\t\t   (vma->vm_end - vma->vm_start) >> 10,
 \t\t\t   vma_kernel_pagesize(vma) >> 10,
 \t\t\t   vma_mmu_pagesize(vma) >> 10);"""
+    new = new.replace(r"\t", "\t")
     if old not in s:
         raise SystemExit("[SUSFS][FATAL] task_mmu.c Size formatter anchor missing")
     s = s.replace(old, new, 1)
@@ -158,7 +159,7 @@ if "susfs_run8_smap_compat" not in s:
 \t\t}
 #endif
 \t}"""
-    new = new.replace(r"\\t", "\\t")
+    new = new.replace(r"\t", "\t")
     if old not in s:
         raise SystemExit("[SUSFS][FATAL] task_mmu.c smaps flags anchor missing")
     s = s.replace(old, new, 1)
