@@ -110,6 +110,49 @@ static inline u32 inotify_mark_user_mask(struct fsnotify_mark *mark)
     s = s.replace(anchor, anchor + helper, 1)
     ih.write_text(s)
 
+# Manually adapt the two known context-only rejects against this Samsung 4.14.113 tree.
+# The functional namespace/readdir hunks have applied; these rejects are the
+# Samsung include placement and a local filldir declaration layout difference.
+ns = root / "fs/namespace.c"
+s = ns.read_text()
+if "#include <linux/susfs_def.h>" not in s:
+    anchor = "#include <linux/sched/task.h>\\n"
+    if anchor not in s:
+        raise SystemExit("[SUSFS][FATAL] namespace.c sched/task include anchor missing")
+    s = s.replace(anchor, anchor + "#ifdef CONFIG_KSU_SUSFS\\n#include <linux/susfs_def.h>\\n#endif\\n#include <linux/jump_label.h>\\n", 1)
+if "extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;" not in s:
+    anchor = '#include "internal.h"\\n'
+    if anchor not in s:
+        raise SystemExit("[SUSFS][FATAL] namespace.c internal.h anchor missing")
+    block = """\\n#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+extern bool susfs_is_current_ksu_domain(void);
+extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;
+#define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */
+#endif // CONFIG_KSU_SUSFS_SUS_MOUNT
+"""
+    s = s.replace(anchor, anchor + block, 1)
+ns.write_text(s)
+
+rd = root / "fs/readdir.c"
+s = rd.read_text()
+if "static int filldir(" not in s:
+    raise SystemExit("[SUSFS][FATAL] readdir.c filldir() function missing")
+fill_start = s.index("static int filldir(")
+fill_end = s.index("\\n}", fill_start)
+fill = s[fill_start:fill_end]
+decl = "#ifdef CONFIG_KSU_SUSFS_SUS_PATH\\n\\tstruct inode *inode;\\n#endif\\n"
+if "struct inode *inode;" not in fill:
+    anchor = "\\tint reclen = ALIGN(offsetof(struct linux_dirent, d_name) + namlen + 2,\\n\\t\\tsizeof(long));\\n"
+    if anchor not in fill:
+        raise SystemExit("[SUSFS][FATAL] readdir.c filldir() reclen declaration context missing")
+    fill = fill.replace(anchor, anchor + "\\n" + decl, 1)
+    s = s[:fill_start] + fill + s[fill_end:]
+    rd.write_text(s)
+
+# Reject files are removed only after the equivalent source edits above succeed.
+(root / "fs/namespace.c.rej").unlink(missing_ok=True)
+(root / "fs/readdir.c.rej").unlink(missing_ok=True)
+print("[SUSFS] Samsung namespace include/declaration and readdir filldir declaration adapted")
 # Synchronize the old Run #8 RKSU supercall dispatcher with the v2.4.0 ABI.
 sc = root / "KernelSU/kernel/supercalls.c"
 s = sc.read_text()
@@ -226,6 +269,9 @@ if "susfs_add_try_umount(arg)" in sc.read_text():
     raise SystemExit("[SUSFS][FATAL] deprecated try_umount API still referenced")
 print("[SUSFS] v2.4.0 RKSU supercall ABI migration applied")
 PY
+
+# Re-evaluate rejects after explicitly adapting the two known Samsung context mismatches.
+REJECTS="$(find "$ROOT" -type f -name '*.rej' -print | sort || true)"
 
 # The 2.4.0 backport supplies susfs.c and the VFS hooks. The manager's
 # deprecated 1.x try_umount API is disabled in this build.
