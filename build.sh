@@ -435,7 +435,7 @@ setup_clang_environment() {
 kernelsu() {
     separator
 
-    # Setup KernelSU Next
+    # Setup RKSU
     if ! test -d "drivers/kernelsu"; then
         quotes "Initialize the pinned KernelSU submodule (never update to remote HEAD)"
         separator
@@ -462,9 +462,9 @@ kernel() {
     noquotes "Build Date: `date +"%Y-%m-%d"`"
 
     if [ -z "$KSU_NEXT" ]; then
-        noquotes "KernelSU Next with SuSFS: Not Include"
+        noquotes "RKSU with SUSFS: Not Included"
     else
-        noquotes "KernelSU Next with SuSFS: Include (Using $KSU_NEXT)"
+        noquotes "RKSU with SUSFS: Included (using $KSU_NEXT)"
     fi
 
     # Update kernel configuration
