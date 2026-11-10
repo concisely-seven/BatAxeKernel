@@ -175,10 +175,10 @@ root = pathlib.Path(sys.argv[1])
 stat = root / "fs/stat.c"
 s = stat.read_text()
 if '#include <linux/susfs_def.h>' not in s:
-    anchor = '#include <linux/compat.h>\\n'
+    anchor = '#include <linux/compat.h>\n'
     if anchor not in s:
         raise SystemExit("[SUSFS][FATAL] fs/stat.c compat.h include anchor missing")
-    s = s.replace(anchor, anchor + "#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT\\n#include <linux/susfs_def.h>\\n#endif\\n", 1)
+    s = s.replace(anchor, anchor + "#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT\n#include <linux/susfs_def.h>\n#endif\n", 1)
 stat.write_text(s)
 if '#define STATX_SUS_KSTAT 0x10000000U' not in (root / "include/linux/susfs_def.h").read_text():
     raise SystemExit("[SUSFS][FATAL] STATX_SUS_KSTAT definitions missing from susfs_def.h")
