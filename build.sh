@@ -470,14 +470,39 @@ kernel() {
     # Update kernel configuration
     update_kernel_config
 
-    DEFCONFIG="$KERNEL_DEFCONFIG bataxe.config $KSU_NEXT"
-
     separator
     noquotes "Building Kernel Using $KERNEL_DEFCONFIG"
-    quotes "Generating Configuration Files"
+    quotes "Merging defconfig + Bataxe + KernelSU/SUSFS fragments"
     separator
 
-    make -j$(nproc --all) $ARGS $DEFCONFIG || abort
+    # Linux 4.14 does not merge multiple config fragments merely because they
+    # are appended as extra make goals. Merge them explicitly, then resolve
+    # Kconfig dependencies before compiling.
+    mkdir -p out
+    scripts/kconfig/merge_config.sh -m -O out \
+        "arch/arm64/configs/$KERNEL_DEFCONFIG" \
+        "arch/arm64/configs/bataxe.config" \
+        "arch/arm64/configs/$KSU_NEXT" || abort
+
+    make -j$(nproc --all) $ARGS olddefconfig || abort
+
+    # Fail closed: never publish a kernel if KSU/SUSFS was dropped by Kconfig.
+    REQUIRED_KSU_CONFIGS=(
+        CONFIG_KSU
+        CONFIG_KSU_MANUAL_HOOK
+        CONFIG_KSU_SUSFS
+        CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
+        CONFIG_KSU_SUSFS_SUS_PATH
+        CONFIG_KSU_SUSFS_SUS_MOUNT
+        CONFIG_KSU_SUSFS_SUS_MAP
+    )
+    for symbol in "${REQUIRED_KSU_CONFIGS[@]}"; do
+        if ! grep -qx "${symbol}=y" out/.config; then
+            echo "[FATAL] Required kernel option is not enabled: ${symbol}"
+            abort
+        fi
+    done
+    echo "[CONFIG] Verified required RKSU + SUSFS options in out/.config"
 
     separator
     quotes "Building Kernel"
@@ -489,9 +514,10 @@ kernel() {
     quotes "Finished Kernel Build!"
     separator
 
-    # Prepare output directory
+    # Prepare output directory and preserve the exact resolved config for audit.
     rm -rf build/out/$MODEL
     mkdir -p build/out/$MODEL
+    cp out/.config build/out/$MODEL/kernel.config
 }
 
 # Fungsi untuk update konfigurasi kernel
