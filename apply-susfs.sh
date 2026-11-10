@@ -352,6 +352,60 @@ dispatch = r"""
 s = s[:start] + dispatch + s[end:]
 sc.write_text(s)
 
+# Reconcile the pinned Run #8 RKSU hooks with the v2.4.0 SUSFS ABI.
+# This SUSFS backport has no mount-id reorder routine: v2.4.0 handles mount IDs
+# in namespace.c itself, so remove the obsolete RKSU call rather than stub it.
+# Its path-loop worker takes no uid argument in this version.
+python3 - "$ROOT" <<'PY'
+import pathlib, sys
+root = pathlib.Path(sys.argv[1])
+
+susfs = root / "fs/susfs.c"
+s = susfs.read_text()
+old = "static void susfs_run_sus_path_loop(void)"
+new = "void susfs_run_sus_path_loop(void)"
+if old in s:
+    s = s.replace(old, new, 1)
+elif new not in s:
+    raise SystemExit("[SUSFS][FATAL] v2.4.0 sus_path_loop implementation not found")
+susfs.write_text(s)
+
+hdr = root / "include/linux/susfs.h"
+s = hdr.read_text()
+proto = "void susfs_run_sus_path_loop(void);\n"
+if proto not in s:
+    anchor = "void susfs_add_sus_path_loop(void __user **user_info);\n"
+    if anchor not in s:
+        raise SystemExit("[SUSFS][FATAL] susfs.h SUS_PATH declaration anchor missing")
+    s = s.replace(anchor, anchor + proto, 1)
+hdr.write_text(s)
+
+# When logging is disabled, the v2.4.0 header forgot the rate-limited
+# no-op macros. Keep call sites valid without enabling noisy kernel logging.
+defs = root / "include/linux/susfs_def.h"
+s = defs.read_text()
+old = "#define SUSFS_LOGI(fmt, ...) \\n#define SUSFS_LOGE(fmt, ...) \\n"
+new = old + "#define SUSFS_LOGI_RL(fmt, ...) \\n#define SUSFS_LOGE_RL(fmt, ...) \\n"
+if "#define SUSFS_LOGI_RL(fmt, ...)" not in s:
+    if old not in s:
+        raise SystemExit("[SUSFS][FATAL] susfs_def.h disabled-logging macro block missing")
+    s = s.replace(old, new, 1)
+defs.write_text(s)
+
+hook = root / "KernelSU/kernel/setuid_hook.c"
+s = hook.read_text()
+s = s.replace("extern void susfs_run_sus_path_loop(uid_t uid);", "extern void susfs_run_sus_path_loop(void);")
+s = s.replace("\textern void susfs_reorder_mnt_id(void);\n", "")
+s = s.replace("\tsusfs_reorder_mnt_id();\n", "")
+s = s.replace("\tsusfs_run_sus_path_loop(new_uid);", "\tsusfs_run_sus_path_loop();")
+if "susfs_reorder_mnt_id" in s or "susfs_run_sus_path_loop(new_uid)" in s:
+    raise SystemExit("[SUSFS][FATAL] legacy RKSU SUSFS hook ABI remains")
+if "susfs_run_sus_path_loop(void)" not in s:
+    raise SystemExit("[SUSFS][FATAL] RKSU path-loop hook declaration was not adapted")
+hook.write_text(s)
+print("[SUSFS] RKSU setuid hooks reconciled with v2.4.0 API; obsolete mount-id reorder hook removed")
+PY
+
 # Pin the intended feature/config ABI and ensure stale v1.x dispatcher calls
 # are gone from the checked-out RKSU source.
 def require(path, needle, label):
