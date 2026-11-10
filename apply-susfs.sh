@@ -380,12 +380,13 @@ hdr.write_text(s)
 # Define no-op forms in the disabled-logging branch so logging can remain off.
 susfs = root / "fs/susfs.c"
 s = susfs.read_text()
-if "#define SUSFS_LOGI_RL(fmt, ...)" not in s:
-    pattern = r'(#else\n#define SUSFS_LOGI\(fmt, \.\.\.\)[ \t]*\n#define SUSFS_LOGE\(fmt, \.\.\.\)[ \t]*\n)(#endif)'
-    m = re.search(pattern, s)
-    if not m:
-        raise SystemExit("[SUSFS][FATAL] fs/susfs.c disabled-logging macro block missing")
-    block = m.group(1) + "#define SUSFS_LOGI_RL(fmt, ...)\n#define SUSFS_LOGE_RL(fmt, ...)\n" + m.group(2)
+pattern = r'(#else\n#define SUSFS_LOGI\(fmt, \.\.\.\)[ \t]*\n#define SUSFS_LOGE\(fmt, \.\.\.\)[ \t]*\n)(#endif)'
+m = re.search(pattern, s)
+if not m:
+    raise SystemExit("[SUSFS][FATAL] fs/susfs.c disabled-logging macro block missing")
+else_block = m.group(1)
+if "#define SUSFS_LOGI_RL(fmt, ...)" not in else_block:
+    block = else_block + "#define SUSFS_LOGI_RL(fmt, ...)\n#define SUSFS_LOGE_RL(fmt, ...)\n" + m.group(2)
     s = s[:m.start()] + block + s[m.end():]
 susfs.write_text(s)
 
