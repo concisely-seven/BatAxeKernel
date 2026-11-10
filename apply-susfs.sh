@@ -101,6 +101,7 @@ new = r"""static int cmdline_proc_show(struct seq_file *m, void *v)
 \t}
 #endif
 \tseq_puts(m, new_command_line);"""
+new = new.replace(r"\t", "\t")
 if old in s:
     s = s.replace(old, new, 1)
 elif "susfs_spoof_cmdline_or_bootconfig(m)" not in s:
@@ -157,6 +158,7 @@ if "susfs_run8_smap_compat" not in s:
 \t\t}
 #endif
 \t}"""
+    new = new.replace(r"\\t", "\\t")
     if old not in s:
         raise SystemExit("[SUSFS][FATAL] task_mmu.c smaps flags anchor missing")
     s = s.replace(old, new, 1)
