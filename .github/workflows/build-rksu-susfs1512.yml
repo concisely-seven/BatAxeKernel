@@ -4,7 +4,7 @@ run-name: "SeVenkernel RKSU SUSFS240 - d1xks - Clang 13 (Run 8 fix)"
 on:
   push:
     branches:
-      - RKSU-susfs240-fix-from-run8
+      - RKSU-susfs1512-fix-from-run8
     paths:
       - 'build.sh'
       - 'apply-susfs.sh'
