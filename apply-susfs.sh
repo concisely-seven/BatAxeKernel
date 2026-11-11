@@ -562,3 +562,145 @@ if [[ -n "$REJECTS" ]]; then
   echo "[SUSFS][FATAL] Port still has rejected upstream hunks; inspect *.rej before kernel compilation"
   exit 1
 fi
+
+
+# Expose SUSFS AVC log spoofing as the KSU Next Manager feature (avc_spoof).
+python3 - "$ROOT" <<'PY'
+import pathlib, sys
+
+root = pathlib.Path(sys.argv[1])
+ksu = root / "KernelSU" / "kernel"
+
+# KernelSU Next Manager's UAPI assigns avc_spoof feature ID 10003.
+# Keep the legacy Run #8 feature IDs unchanged.
+feature_h = ksu / "feature.h"
+s = feature_h.read_text()
+if "KSU_FEATURE_AVC_SPOOF" not in s:
+    anchor = "\tKSU_FEATURE_ENHANCED_SECURITY = 2,\n\n\tKSU_FEATURE_MAX"
+    replacement = (
+        "\tKSU_FEATURE_ENHANCED_SECURITY = 2,\n"
+        "\tKSU_FEATURE_AVC_SPOOF = 10003,\n\n"
+        "\tKSU_FEATURE_MAX = 10004"
+    )
+    if anchor not in s:
+        raise SystemExit("[AVC-SPOOF][FATAL] feature.h enum anchor mismatch")
+    s = s.replace(anchor, replacement, 1)
+elif "KSU_FEATURE_MAX = 10004" not in s:
+    raise SystemExit("[AVC-SPOOF][FATAL] feature ID exists but MAX is not compatible")
+feature_h.write_text(s)
+
+# Register a KSU feature handler that controls the exact static key consumed
+# by the Samsung SELinux AVC audit hook patched above.
+avc_c = ksu / "avc_spoof.c"
+avc_source = """#include <linux/errno.h>
+#include <linux/jump_label.h>
+#include <linux/printk.h>
+
+#include "feature.h"
+
+extern struct static_key_false susfs_is_avc_log_spoofing_enabled;
+
+static int avc_spoof_feature_get(u64 *value)
+{
+	if (!value)
+		return -EINVAL;
+
+	*value = static_branch_likely(&susfs_is_avc_log_spoofing_enabled) ? 1 : 0;
+	return 0;
+}
+
+static int avc_spoof_feature_set(u64 value)
+{
+	bool enable = !!value;
+	bool enabled = static_branch_likely(&susfs_is_avc_log_spoofing_enabled);
+
+	/* static-key enable/disable must only be performed on state changes. */
+	if (enable && !enabled)
+		static_branch_enable(&susfs_is_avc_log_spoofing_enabled);
+	else if (!enable && enabled)
+		static_branch_disable(&susfs_is_avc_log_spoofing_enabled);
+
+	pr_info("avc_spoof: set to %d\\n", enable ? 1 : 0);
+	return 0;
+}
+
+static const struct ksu_feature_handler avc_spoof_handler = {
+	.feature_id = KSU_FEATURE_AVC_SPOOF,
+	.name = "avc_spoof",
+	.get_handler = avc_spoof_feature_get,
+	.set_handler = avc_spoof_feature_set,
+};
+
+int ksu_avc_spoof_init(void)
+{
+	int ret = ksu_register_feature_handler(&avc_spoof_handler);
+
+	if (ret)
+		pr_err("avc_spoof: failed to register feature handler: %d\\n", ret);
+	else
+		pr_info("avc_spoof: feature handler registered (id=%u)\\n",
+			KSU_FEATURE_AVC_SPOOF);
+	return ret;
+}
+
+void ksu_avc_spoof_exit(void)
+{
+	ksu_unregister_feature_handler(KSU_FEATURE_AVC_SPOOF);
+}
+"""
+if avc_c.exists():
+    existing = avc_c.read_text()
+    if existing != avc_source:
+        raise SystemExit("[AVC-SPOOF][FATAL] unexpected pre-existing avc_spoof.c")
+else:
+    avc_c.write_text(avc_source)
+
+# Compile the new handler into the built-in KernelSU object.
+mk = ksu / "Makefile"
+s = mk.read_text()
+if "ksu_obj-y += avc_spoof.o" not in s:
+    anchor = "ksu_obj-y += feature.o\n"
+    if s.count(anchor) != 1:
+        raise SystemExit("[AVC-SPOOF][FATAL] KernelSU Makefile feature.o anchor mismatch")
+    s = s.replace(anchor, anchor + "ksu_obj-y += avc_spoof.o\n", 1)
+mk.write_text(s)
+
+# Register after SUSFS initialization (the static key is defined by fs/susfs.c),
+# and unregister before the shared feature table is torn down.
+init = ksu / "ksuinit.c"
+s = init.read_text()
+if "int ksu_avc_spoof_init(void);" not in s:
+    anchor = "extern void __init ksu_lsm_hook_init(void);\n"
+    if s.count(anchor) != 1:
+        raise SystemExit("[AVC-SPOOF][FATAL] ksuinit.c prototype anchor mismatch")
+    s = s.replace(anchor, anchor + "int ksu_avc_spoof_init(void);\nvoid ksu_avc_spoof_exit(void);\n", 1)
+if "ksu_avc_spoof_init();" not in s:
+    anchor = "\tsusfs_init();\n"
+    if s.count(anchor) != 1:
+        raise SystemExit("[AVC-SPOOF][FATAL] ksuinit.c susfs_init anchor mismatch")
+    s = s.replace(anchor, anchor + "\tif (ksu_avc_spoof_init())\n\t\tpr_err(\"avc_spoof: feature registration failed\\n\");\n", 1)
+if "ksu_avc_spoof_exit();" not in s:
+    anchor = "\tksu_feature_exit();\n"
+    if s.count(anchor) != 1:
+        raise SystemExit("[AVC-SPOOF][FATAL] ksuinit.c feature_exit anchor mismatch")
+    s = s.replace(anchor, "\tksu_avc_spoof_exit();\n" + anchor, 1)
+init.write_text(s)
+
+# Fail the build early if any part of the manager/kernel bridge is absent.
+checks = [
+    (feature_h, "KSU_FEATURE_AVC_SPOOF = 10003"),
+    (feature_h, "KSU_FEATURE_MAX = 10004"),
+    (mk, "ksu_obj-y += avc_spoof.o"),
+    (avc_c, '.name = "avc_spoof"'),
+    (avc_c, ".feature_id = KSU_FEATURE_AVC_SPOOF"),
+    (init, "ksu_avc_spoof_init();"),
+    (init, "ksu_avc_spoof_exit();"),
+]
+for path, needle in checks:
+    if needle not in path.read_text():
+        raise SystemExit("[AVC-SPOOF][FATAL] verification failed: " + needle)
+
+if "susfs_is_avc_log_spoofing_enabled" not in (root / "fs/susfs.c").read_text():
+    raise SystemExit("[AVC-SPOOF][FATAL] SUSFS AVC static key is missing")
+print("[AVC-SPOOF] KSU Next feature ID 10003 registered against SUSFS AVC static key")
+PY
