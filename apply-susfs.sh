@@ -152,10 +152,6 @@ ns.write_text(s)
 # Keep the LSPosed/Vector Dex2Oat wrapper visible to its root KSU-domain
 # stat() check even when SUSFS marks that task as umounted. Do not lower the
 # fake mount ID: the wrapper mount must remain hidden from ordinary app views.
-python3 - "$ROOT" <<'PY'
-import pathlib, sys
-
-root = pathlib.Path(sys.argv[1])
 ns = root / "fs/namespace.c"
 s = ns.read_text()
 
@@ -224,7 +220,6 @@ if "susfs_is_dex2oat_target_dentry(dentry)" not in s:
     raise SystemExit("[SUSFS][DEX2OAT][FATAL] wrapper lookup exception verification failed")
 ns.write_text(s)
 print("[SUSFS][DEX2OAT] KSU-domain wrapper path lookup exception applied; fake mount IDs retained")
-PY
 
 rd = root / "fs/readdir.c"
 s = rd.read_text()
