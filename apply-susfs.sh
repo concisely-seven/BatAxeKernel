@@ -449,7 +449,7 @@ PY
 # The upstream non-SU filter also catches Android system UIDs; scope the filtered
 # mount view to application UIDs while preserving SUS_MOUNT for app-level hiding.
 python3 - "$ROOT" <<'PY'
-import pathlib, sys
+import pathlib, re, sys
 p = pathlib.Path(sys.argv[1]) / "fs/proc_namespace.c"
 s = p.read_text()
 anchor = "extern struct static_key_false susfs_is_hide_sus_mnts_for_non_su_procs_enabled;\n"
@@ -494,7 +494,7 @@ for old, new in replacements:
     if count != 1:
         raise SystemExit("[SUSFS][FATAL] expected exactly one SUSFS mount-view hook; got %d" % count)
     s = s.replace(old, new, 1)
-if s.count("susfs_should_hide_sus_mnts_for_current()") != 3:
+if len(re.findall(r"if \\(susfs_should_hide_sus_mnts_for_current\\(\\)\\)", s)) != 3:
     raise SystemExit("[SUSFS][FATAL] app-only mount-view guard verification failed")
 if "if (likely(!susfs_is_current_ksu_domain()))" in s:
     raise SystemExit("[SUSFS][FATAL] unscoped non-SU mount-view filter remains")
