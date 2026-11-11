@@ -1,5 +1,5 @@
-name: Build N971N Binary2 RKSU + SUSFS 2.4.0 (three options enabled)
-run-name: "SeVenkernel RKSU SUSFS240 - d1xks - Clang 13 (TRY_UMOUNT + AUTO_ADD + LOG)"
+name: Build N971N Binary2 RKSU + SUSFS 2.4.0 (LOG + AVC spoof)
+run-name: "SeVenkernel RKSU SUSFS240 - d1xks - Clang 13 (LOG + AVC spoof)"
 
 on:
   push:
@@ -58,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x build.sh
-          bash build.sh -m d1xks -v B2-RKSU-SUSFS240-TRYUMOUNT-AUTOADD-LOG -k y -l 13 -r y
+          bash build.sh -m d1xks -v B2-RKSU-SUSFS240-LOG-AVCSPOOF -k y -l 13 -r y
 
       - name: Verify flashable ZIP and build identity
         shell: bash
@@ -81,7 +81,7 @@ jobs:
       - name: Upload flashable ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: SeVenkernel-RKSU-SUSFS240-three-options-${{ github.run_number }}-Clang13
+          name: SeVenkernel-RKSU-SUSFS240-LOG-AVCSPOOF-${{ github.run_number }}-Clang13
           path: build/export/*.zip
           if-no-files-found: error
           compression-level: 9
@@ -90,6 +90,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: SeVenkernel-RKSU-SUSFS240-three-options-build-log
+          name: SeVenkernel-RKSU-SUSFS240-LOG-AVCSPOOF-build-log
           path: build.log
           if-no-files-found: ignore
