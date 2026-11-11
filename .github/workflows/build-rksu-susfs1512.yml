@@ -1,5 +1,5 @@
-name: Build N971N Binary2 RKSU + SUSFS 2.4.0 (Dex2Oat lookup fix)
-run-name: "SeVenkernel RKSU SUSFS240 - d1xks - Clang 13 (Dex2Oat lookup fix)"
+name: Build N971N Binary2 RKSU + SUSFS 2.4.0 (three options enabled)
+run-name: "SeVenkernel RKSU SUSFS240 - d1xks - Clang 13 (TRY_UMOUNT + AUTO_ADD + LOG)"
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
       - RKSU-susfs240-dex2oat-mount-test
       - RKSU-susfs240-dex2oat-mount-fix
       - RKSU-susfs240-lspd-dex2oat-lookup-fix
+      - kernelsu-susfs2.4-three-options-test
     paths:
       - 'build.sh'
       - 'apply-susfs.sh'
@@ -26,13 +27,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
-      - name: Checkout Run #8-derived fix branch with pinned submodules
+      - name: Checkout Run #61 SUSFS 2.4.0 baseline with pinned RKSU submodule
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
           submodules: true
 
-      - name: Verify Run #8 RKSU source and pinned submodule
+      - name: Verify pinned RKSU source
         shell: bash
         run: |
           set -euo pipefail
@@ -42,7 +43,7 @@ jobs:
           test "$(git -C KernelSU rev-parse HEAD)" = "9b28326af4145974560122644e87fc9a021a2cce"
           grep -q 'config KSU_SUSFS' KernelSU/kernel/Kconfig
           grep -q 'KernelSU-SusFS version' KernelSU/kernel/Makefile
-          echo "Run #8-derived kernel base + native SUSFS-enabled RKSU submodule verified."
+          echo "Run #61 SUSFS 2.4.0 source + pinned RKSU submodule verified."
 
       - name: Install build dependencies
         run: |
@@ -57,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x build.sh
-          bash build.sh -m d1xks -v B2-RKSU-SUSFS240-Dex2OatLookupFix -k y -l 13 -r y
+          bash build.sh -m d1xks -v B2-RKSU-SUSFS240-TRYUMOUNT-AUTOADD-LOG -k y -l 13 -r y
 
       - name: Verify flashable ZIP and build identity
         shell: bash
@@ -75,12 +76,12 @@ jobs:
           [[ "$name" == SeVenkernel-RKSU-SUSFS-d1xks*.zip ]]
           unzip -p "${zips[0]}" META-INF/com/google/android/updater-script > /tmp/updater-script
           ! grep -Eiq 'Binary 7|Binaries Support: 7|Binary 8|Binary 9' /tmp/updater-script
-          echo "ZIP integrity and SeVenkernel RKSU naming verified."
+          echo "ZIP integrity, N971N Binary2 compatibility and SeVenkernel RKSU naming verified."
 
       - name: Upload flashable ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: SeVenkernel-RKSU-SUSFS-d1xks-dex2oat-lookup-fix-${{ github.run_number }}-Clang13
+          name: SeVenkernel-RKSU-SUSFS240-three-options-${{ github.run_number }}-Clang13
           path: build/export/*.zip
           if-no-files-found: error
           compression-level: 9
@@ -89,6 +90,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: SeVenkernel-RKSU-SUSFS240-dex2oat-lookup-fix-build-log
+          name: SeVenkernel-RKSU-SUSFS240-three-options-build-log
           path: build.log
           if-no-files-found: ignore
