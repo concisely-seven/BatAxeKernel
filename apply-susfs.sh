@@ -167,6 +167,14 @@ static inline bool susfs_is_root_unshare_helper(void)
     if '#include <linux/cred.h>' not in s:
         s = s.replace('#include <linux/sched/task.h>\n',
                       '#include <linux/sched/task.h>\n#include <linux/cred.h>\n#include <linux/string.h>\n', 1)
+if '#include <linux/cred.h>' not in s:
+    s = s.replace('#include <linux/sched/task.h>\n',
+                  '#include <linux/sched/task.h>\n#include <linux/cred.h>\n', 1)
+if '#include <linux/string.h>' not in s:
+    anchor_inc = '#include <linux/cred.h>\n'
+    if anchor_inc not in s:
+        raise SystemExit("[SUSFS][FATAL] namespace.c cred.h include anchor missing")
+    s = s.replace(anchor_inc, anchor_inc + '#include <linux/string.h>\n', 1)
 ns.write_text(s)
 
 # Preserve the SUSFS fake-mount allocation path for LSPosed's root unshare
