@@ -494,7 +494,8 @@ for old, new in replacements:
     if count != 1:
         raise SystemExit("[SUSFS][FATAL] expected exactly one SUSFS mount-view hook; got %d" % count)
     s = s.replace(old, new, 1)
-if len(re.findall(r"if \\(susfs_should_hide_sus_mnts_for_current\\(\\)\\)", s)) != 3:
+call_guard = "if (" + "susfs_should_hide_sus_mnts_for_current" + "())"
+if s.count(call_guard) != 3:
     raise SystemExit("[SUSFS][FATAL] app-only mount-view guard verification failed")
 if "if (likely(!susfs_is_current_ksu_domain()))" in s:
     raise SystemExit("[SUSFS][FATAL] unscoped non-SU mount-view filter remains")
