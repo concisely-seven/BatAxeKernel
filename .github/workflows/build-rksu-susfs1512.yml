@@ -1,11 +1,12 @@
-name: Build N971N Binary2 RKSU + SUSFS 2.4.0 (Run 8 fix)
-run-name: "SeVenkernel RKSU SUSFS240 - d1xks - Clang 13 (Dex2Oat mount test)"
+name: Build N971N Binary2 RKSU + SUSFS 2.4.0 (Dex2Oat mount fix)
+run-name: "SeVenkernel RKSU SUSFS240 - d1xks - Clang 13 (Dex2Oat mount fix)"
 
 on:
   push:
     branches:
       - RKSU-susfs1512-fix-from-run8
       - RKSU-susfs240-dex2oat-mount-test
+      - RKSU-susfs240-dex2oat-mount-fix
     paths:
       - 'build.sh'
       - 'apply-susfs.sh'
@@ -55,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x build.sh
-          ALLOW_SUSFS_MOUNT_OFF=y bash build.sh -m d1xks -v B2-RKSU-SUSFS240-Dex2OatTest -k y -l 13 -r y
+          bash build.sh -m d1xks -v B2-RKSU-SUSFS240-Dex2OatFix -k y -l 13 -r y
 
       - name: Verify flashable ZIP and build identity
         shell: bash
@@ -78,7 +79,7 @@ jobs:
       - name: Upload flashable ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: SeVenkernel-RKSU-SUSFS-d1xks-dex2oat-mount-test-${{ github.run_number }}-Clang13
+          name: SeVenkernel-RKSU-SUSFS-d1xks-dex2oat-mount-fix-${{ github.run_number }}-Clang13
           path: build/export/*.zip
           if-no-files-found: error
           compression-level: 9
@@ -87,6 +88,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: SeVenkernel-RKSU-SUSFS240-dex2oat-mount-test-build-log
+          name: SeVenkernel-RKSU-SUSFS240-dex2oat-mount-fix-build-log
           path: build.log
           if-no-files-found: ignore

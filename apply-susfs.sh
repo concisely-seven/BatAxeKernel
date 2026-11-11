@@ -444,6 +444,65 @@ if "susfs_add_try_umount(arg)" in sc.read_text():
 print("[SUSFS] v2.4.0 RKSU supercall ABI migration applied")
 PY
 
+# SUSFS v2.4 compatibility adjustment:
+# Keep system/framework services (including ART/dex2oat) on the real mount view.
+# The upstream non-SU filter also catches Android system UIDs; scope the filtered
+# mount view to application UIDs while preserving SUS_MOUNT for app-level hiding.
+python3 - "$ROOT" <<'PY'
+import pathlib, sys
+p = pathlib.Path(sys.argv[1]) / "fs/proc_namespace.c"
+s = p.read_text()
+anchor = "extern struct static_key_false susfs_is_hide_sus_mnts_for_non_su_procs_enabled;\n"
+helper = """
+/*
+ * System services such as ART/dex2oat must retain the genuine mount view.
+ * Apply SUSFS mount-list filtering only to third-party/application UIDs.
+ */
+static inline bool susfs_should_hide_sus_mnts_for_current(void)
+{
+	return static_branch_likely(&susfs_is_hide_sus_mnts_for_non_su_procs_enabled) &&
+		likely(!susfs_is_current_ksu_domain()) &&
+		susfs_is_current_app_uid();
+}
+"""
+if "susfs_should_hide_sus_mnts_for_current" not in s:
+    if s.count(anchor) != 1:
+        raise SystemExit("[SUSFS][FATAL] proc_namespace hide-key declaration anchor mismatch")
+    s = s.replace(anchor, anchor + helper, 1)
+replacements = [
+("""if (static_branch_likely(&susfs_is_hide_sus_mnts_for_non_su_procs_enabled)) {
+		if (likely(!susfs_is_current_ksu_domain()))
+			return mounts_open_common(inode, file, susfs_show_vfsmnt);
+	}""",
+ """if (susfs_should_hide_sus_mnts_for_current())
+		return mounts_open_common(inode, file, susfs_show_vfsmnt);"""),
+("""if (static_branch_likely(&susfs_is_hide_sus_mnts_for_non_su_procs_enabled)) {
+		if (likely(!susfs_is_current_ksu_domain()))
+			return mounts_open_common(inode, file, susfs_show_mountinfo);
+	}""",
+ """if (susfs_should_hide_sus_mnts_for_current())
+		return mounts_open_common(inode, file, susfs_show_mountinfo);"""),
+("""if (static_branch_likely(&susfs_is_hide_sus_mnts_for_non_su_procs_enabled)) {
+		if (likely(!susfs_is_current_ksu_domain()))
+			return mounts_open_common(inode, file, susfs_show_vfsstat);
+	}""",
+ """if (susfs_should_hide_sus_mnts_for_current())
+		return mounts_open_common(inode, file, susfs_show_vfsstat);""")
+]
+for old, new in replacements:
+    count = s.count(old)
+    if count != 1:
+        raise SystemExit("[SUSFS][FATAL] expected exactly one SUSFS mount-view hook; got %d" % count)
+    s = s.replace(old, new, 1)
+if s.count("susfs_should_hide_sus_mnts_for_current()") != 4:
+    raise SystemExit("[SUSFS][FATAL] app-only mount-view guard verification failed")
+if "if (likely(!susfs_is_current_ksu_domain()))" in s:
+    raise SystemExit("[SUSFS][FATAL] unscoped non-SU mount-view filter remains")
+p.write_text(s)
+print("[SUSFS] mount hiding scoped to application UIDs; system/ART mount view preserved")
+PY
+
+
 # Re-evaluate rejects after explicitly adapting the two known Samsung context mismatches.
 REJECTS="$(find "$ROOT" -type f -name '*.rej' -print | sort || true)"
 
