@@ -481,12 +481,26 @@ kernel() {
 
     # Fail closed: never build/package a kernel without the requested RKSU + SUSFS config.
     if [[ -n "$KSU_NEXT" ]]; then
-        for symbol in CONFIG_KSU CONFIG_KSU_SUSFS CONFIG_KSU_SUSFS_SUS_PATH CONFIG_KSU_SUSFS_SUS_MOUNT CONFIG_KSU_SUSFS_SUS_KSTAT CONFIG_KSU_SUSFS_SPOOF_UNAME CONFIG_KSU_SUSFS_SUS_MAP CONFIG_KSU_SUSFS_OPEN_REDIRECT CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG; do
+        for symbol in CONFIG_KSU CONFIG_KSU_SUSFS CONFIG_KSU_SUSFS_SUS_PATH CONFIG_KSU_SUSFS_SUS_KSTAT CONFIG_KSU_SUSFS_SPOOF_UNAME CONFIG_KSU_SUSFS_SUS_MAP CONFIG_KSU_SUSFS_OPEN_REDIRECT CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG; do
             grep -qx "${symbol}=y" out/.config || {
                 echo "[FATAL] Required kernel config missing or disabled: ${symbol}"
                 abort
             }
         done
+
+        # The Dex2Oat isolation build deliberately disables only SUSFS mount
+        # hiding. Keep the normal build fail-closed unless this test flag is set.
+        if [[ "${ALLOW_SUSFS_MOUNT_OFF:-n}" == "y" ]]; then
+            grep -qx '# CONFIG_KSU_SUSFS_SUS_MOUNT is not set' out/.config || {
+                echo "[FATAL] SUSFS mount isolation requested but CONFIG_KSU_SUSFS_SUS_MOUNT is still enabled"
+                abort
+            }
+        else
+            grep -qx 'CONFIG_KSU_SUSFS_SUS_MOUNT=y' out/.config || {
+                echo "[FATAL] Required kernel config missing or disabled: CONFIG_KSU_SUSFS_SUS_MOUNT"
+                abort
+            }
+        fi
     fi
 
     separator
