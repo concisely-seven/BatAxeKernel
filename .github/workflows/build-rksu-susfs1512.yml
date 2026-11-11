@@ -9,6 +9,7 @@ on:
       - RKSU-susfs240-dex2oat-mount-fix
       - RKSU-susfs240-lspd-dex2oat-fix
       - RKSU-susfs240-lspd-dex2oat-log-on
+      - RKSU-susfs240-lspd-dex2oat-mount-off-avc-spoof
     paths:
       - 'build.sh'
       - 'apply-susfs.sh'
