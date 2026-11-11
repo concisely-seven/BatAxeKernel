@@ -1,5 +1,5 @@
-name: Build N971N Binary2 RKSU + SUSFS 2.4.0 (LSPosed unshare Dex2Oat test)
-run-name: "SeVenkernel RKSU SUSFS240 - d1xks - Clang 13 (LSPosed unshare test)"
+name: Build N971N Binary2 RKSU + SUSFS 2.4.0 (LSPosed Dex2Oat + SUSFS log test)
+run-name: "SeVenkernel RKSU SUSFS240 - d1xks - Clang 13 (Dex2Oat + LOG ON)"
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
       - RKSU-susfs240-dex2oat-mount-test
       - RKSU-susfs240-dex2oat-mount-fix
       - RKSU-susfs240-lspd-dex2oat-fix
+      - RKSU-susfs240-lspd-dex2oat-log-on
     paths:
       - 'build.sh'
       - 'apply-susfs.sh'
@@ -57,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x build.sh
-          bash build.sh -m d1xks -v B2-RKSU-SUSFS240-LSPD-Dex2Oat -k y -l 13 -r y
+          bash build.sh -m d1xks -v B2-RKSU-SUSFS240-LSPD-Dex2Oat-LogOn-LogOn -k y -l 13 -r y
 
       - name: Verify flashable ZIP and build identity
         shell: bash
@@ -80,7 +81,7 @@ jobs:
       - name: Upload flashable ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: SeVenkernel-RKSU-SUSFS-d1xks-lspd-dex2oat-${{ github.run_number }}-Clang13
+          name: SeVenkernel-RKSU-SUSFS-d1xks-lspd-dex2oat-log-on-${{ github.run_number }}-Clang13
           path: build/export/*.zip
           if-no-files-found: error
           compression-level: 9
@@ -89,6 +90,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: SeVenkernel-RKSU-SUSFS240-lspd-dex2oat-build-log
+          name: SeVenkernel-RKSU-SUSFS240-lspd-dex2oat-log-on-build-log
           path: build.log
           if-no-files-found: ignore
