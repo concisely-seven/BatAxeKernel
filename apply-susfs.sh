@@ -149,6 +149,83 @@ extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;
     s = s.replace(anchor, anchor + block, 1)
 ns.write_text(s)
 
+# Keep the LSPosed/Vector Dex2Oat wrapper visible to its root KSU-domain
+# stat() check even when SUSFS marks that task as umounted. Do not lower the
+# fake mount ID: the wrapper mount must remain hidden from ordinary app views.
+python3 - "$ROOT" <<'PY'
+import pathlib, sys
+
+root = pathlib.Path(sys.argv[1])
+ns = root / "fs/namespace.c"
+s = ns.read_text()
+
+for header in ("#include <linux/string.h>\\n", "#include <linux/printk.h>\\n"):
+    if header not in s:
+        anchor = "#include <linux/sched/task.h>\\n"
+        if anchor not in s:
+            raise SystemExit("[SUSFS][DEX2OAT][FATAL] namespace.c sched/task include anchor missing")
+        s = s.replace(anchor, anchor + header, 1)
+
+helper = """\\nstatic inline bool susfs_is_dex2oat_target_dentry(const struct dentry *dentry)
+{
+    const char *name;
+
+    if (!dentry)
+        return false;
+
+    name = dentry->d_name.name;
+    return !strcmp(name, "dex2oat") ||
+           !strcmp(name, "dex2oat32") ||
+           !strcmp(name, "dex2oat64") ||
+           !strcmp(name, "dex2oatd") ||
+           !strcmp(name, "dex2oatd32") ||
+           !strcmp(name, "dex2oatd64");
+}
+"""
+if "susfs_is_dex2oat_target_dentry" not in s:
+    anchor = "#define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */\\n"
+    if s.count(anchor) != 1:
+        raise SystemExit("[SUSFS][DEX2OAT][FATAL] namespace.c CL_COPY_MNT_NS anchor mismatch")
+    s = s.replace(anchor, anchor + helper, 1)
+
+old = """\\tif (susfs_is_current_proc_umounted()) {
+\\t\\thlist_for_each_entry_rcu(p, head, mnt_hash)
+\\t\\t\\tif (p->mnt_id < DEFAULT_KSU_MNT_ID && &p->mnt_parent->mnt == mnt && p->mnt_mountpoint == dentry)
+\\t\\t\\t\\treturn p;
+\\t\\treturn NULL;
+\\t}"""
+new = """\\tif (susfs_is_current_proc_umounted()) {
+\\t\\thlist_for_each_entry_rcu(p, head, mnt_hash) {
+\\t\\t\\tif (&p->mnt_parent->mnt == mnt && p->mnt_mountpoint == dentry) {
+\\t\\t\\t\\tif (p->mnt_id < DEFAULT_KSU_MNT_ID)
+\\t\\t\\t\\t\\treturn p;
+\\t\\t\\t\\t/*
+\\t\\t\\t\\t * LSPosed/Vector checks its ART bind mounts with stat()
+\\t\\t\\t\\t * through /proc/1/root. Let only the root KSU domain resolve
+\\t\\t\\t\\t * these exact wrapper mountpoints; keep their high SUSFS IDs
+\\t\\t\\t\\t * so normal app mount views continue hiding them.
+\\t\\t\\t\\t */
+\\t\\t\\t\\tif (susfs_is_current_ksu_domain() &&
+\\t\\t\\t\\t    susfs_is_dex2oat_target_dentry(dentry)) {
+\\t\\t\\t\\t\\tpr_info_ratelimited("[SUSFS][DEX2OAT] allow KSU wrapper lookup: %s mnt_id=%d\\n",
+\\t\\t\\t\\t\\t\\tdentry->d_name.name, p->mnt_id);
+\\t\\t\\t\\t\\treturn p;
+\\t\\t\\t\\t}
+\\t\\t\\t}
+\\t\\t}
+\\t\\treturn NULL;
+\\t}"""
+if "SUSFS][DEX2OAT] allow KSU wrapper lookup" not in s:
+    if s.count(old) != 1:
+        raise SystemExit("[SUSFS][DEX2OAT][FATAL] __lookup_mnt umounted-filter anchor mismatch")
+    s = s.replace(old, new, 1)
+
+if "susfs_is_dex2oat_target_dentry(dentry)" not in s:
+    raise SystemExit("[SUSFS][DEX2OAT][FATAL] wrapper lookup exception verification failed")
+ns.write_text(s)
+print("[SUSFS][DEX2OAT] KSU-domain wrapper path lookup exception applied; fake mount IDs retained")
+PY
+
 rd = root / "fs/readdir.c"
 s = rd.read_text()
 if "static int filldir(" not in s:
