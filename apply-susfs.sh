@@ -507,6 +507,17 @@ require(hook, "susfs_run_sus_path_loop(void)", "RKSU path-loop ABI")
 if "susfs_reorder_mnt_id" in hook.read_text():
     raise SystemExit("[SUSFS][FATAL] obsolete RKSU mount-id reorder hook remains")
 require(sc, "CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS", "v2.4 mount-hide command")
+# Verify the complete AVC spoofing path: SUSFS state + RKSU supercall +
+# Samsung 4.14 AVC audit hook. This is not a Kconfig toggle in v2.4.0.
+require(susfs, "DEFINE_STATIC_KEY_FALSE(susfs_is_avc_log_spoofing_enabled)", "AVC spoof static key")
+require(susfs, "void susfs_set_avc_log_spoofing", "AVC spoof state handler")
+require(sc, "CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING", "RKSU AVC spoof supercall")
+require(sc, "susfs_set_avc_log_spoofing(arg)", "RKSU AVC spoof dispatch")
+avc_source = (root / "security/selinux/avc.c").read_text()
+if "static_branch_likely(&susfs_is_avc_log_spoofing_enabled)" not in avc_source or "bypass_orig_flow:" not in avc_source:
+    raise SystemExit("[SUSFS][FATAL] Samsung AVC audit hook for spoofing is incomplete")
+require(sc, "CMD_SUSFS_ENABLE_LOG", "RKSU SUSFS logging supercall")
+require(susfs, "void susfs_enable_log", "SUSFS logging handler")
 if "susfs_set_hide_sus_mnts_for_all_procs" in sc.read_text():
     raise SystemExit("[SUSFS][FATAL] legacy hide-mount API still referenced")
 if "susfs_set_i_state_on_external_dir" in sc.read_text():
