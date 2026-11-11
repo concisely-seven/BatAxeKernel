@@ -144,9 +144,45 @@ if "extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;" n
 extern bool susfs_is_current_ksu_domain(void);
 extern struct static_key_true susfs_is_sdcard_android_data_not_decrypted;
 #define CL_COPY_MNT_NS BIT(25) /* used by copy_mnt_ns() */
+
+/*
+ * LSPosed's service.sh starts its daemon using:
+ *   unshare --propagation slave -m ...
+ * In the KSU domain, avoid the SUSFS mount-id reuse optimization for this
+ * one root namespace-bootstrap helper. clone_mnt() will then allocate SUSFS
+ * fake IDs normally; all other namespace copies retain upstream behavior.
+ */
+static inline bool susfs_is_root_unshare_helper(void)
+{
+    if (current_uid().val != 0)
+        return false;
+
+    return !strcmp(current->comm, "unshare") ||
+           !strcmp(current->comm, "toybox") ||
+           !strcmp(current->comm, "busybox");
+}
 #endif // CONFIG_KSU_SUSFS_SUS_MOUNT
 """
     s = s.replace(anchor, anchor + block, 1)
+    if '#include <linux/cred.h>' not in s:
+        s = s.replace('#include <linux/sched/task.h>\n',
+                      '#include <linux/sched/task.h>\n#include <linux/cred.h>\n#include <linux/string.h>\n', 1)
+ns.write_text(s)
+
+# Preserve the SUSFS fake-mount allocation path for LSPosed's root unshare
+# helper, while keeping CL_COPY_MNT_NS unchanged for every other caller.
+copy_anchor = "\tcopy_flags |= CL_COPY_MNT_NS;\n"
+copy_replacement = """\tif (susfs_is_root_unshare_helper() && susfs_is_current_ksu_domain()) {
+\t\tpr_info("[SUSFS][LSPD] root unshare helper comm=%s; skip CL_COPY_MNT_NS\\n",
+\t\t\tcurrent->comm);
+\t} else {
+\t\tcopy_flags |= CL_COPY_MNT_NS;
+\t}
+"""
+if copy_anchor not in s:
+    raise SystemExit("[SUSFS][FATAL] copy_mnt_ns CL_COPY_MNT_NS anchor missing")
+if "[SUSFS][LSPD] root unshare helper" not in s:
+    s = s.replace(copy_anchor, copy_replacement, 1)
 ns.write_text(s)
 
 rd = root / "fs/readdir.c"
