@@ -169,7 +169,7 @@ helper = """\nstatic inline bool susfs_is_dex2oat_target_dentry(const struct den
     if (!dentry)
         return false;
 
-    name = dentry->d_name.name;
+    name = (const char *)dentry->d_name.name;
     return !strcmp(name, "dex2oat") ||
            !strcmp(name, "dex2oat32") ||
            !strcmp(name, "dex2oat64") ||
@@ -203,8 +203,8 @@ new = """\tif (susfs_is_current_proc_umounted()) {
 \t\t\t\t */
 \t\t\t\tif (susfs_is_current_ksu_domain() &&
 \t\t\t\t    susfs_is_dex2oat_target_dentry(dentry)) {
-\t\t\t\t\tpr_info_ratelimited("[SUSFS][DEX2OAT] allow KSU wrapper lookup: %s mnt_id=%d\n",
-\t\t\t\t\t\tdentry->d_name.name, p->mnt_id);
+\t\t\t\t\tpr_info_ratelimited("[SUSFS][DEX2OAT] allow KSU wrapper lookup: %s mnt_id=%d\\n",
+\t\t\t\t\t\t(const char *)dentry->d_name.name, p->mnt_id);
 \t\t\t\t\treturn p;
 \t\t\t\t}
 \t\t\t}
